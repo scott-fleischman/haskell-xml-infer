@@ -21,6 +21,7 @@ executable xml-infer
     resourcet >=1.1,
     xml-types >=0.3,
     conduit >=1.2,
+    conduit-combinators >=1.0,
     xml-conduit >=1.3,
     filepath >=1.4,
     filemanip >=0.3,
