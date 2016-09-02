@@ -1,8 +1,16 @@
 sudo: false
 
+language: c
+
 cache:
   directories:
   - $HOME/.stack
+
+# GHC depends on GMP.
+addons:
+  apt:
+    packages:
+    - libgmp-dev
 
 env:
 - ARGS=""
