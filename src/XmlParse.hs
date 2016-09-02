@@ -23,6 +23,8 @@ data Ignored
   | IgnoredMissingPosition XML.Event
   deriving (Show)
 
+data ShowIgnored = ShowIgnored | ShowExisting
+
 splitIgnored :: (Maybe PositionRange, XML.Event) -> Either Ignored Event
 splitIgnored (_, XML.EventBeginDocument) = Left IgnoredBeginDocument
 splitIgnored (_, XML.EventEndDocument) = Left IgnoredEndDocument
@@ -42,8 +44,13 @@ splitAllIgnored = foldr (aux . splitIgnored) ([], [])
     aux (Left a) (as, bs) = (a : as, bs)
     aux (Right b) (as, bs) = (as, b : bs)
 
-xmlParse :: FilePath -> IO ()
-xmlParse path = do
+printPerLine :: (Show a) => [a] -> IO ()
+printPerLine = mapM_ print
+
+xmlParse :: FilePath -> ShowIgnored -> IO ()
+xmlParse path i = do
   elements <- runResourceT $ sourceFile path =$= parseBytesPos def $$ sinkList
   let (ignored, events) = splitAllIgnored elements
-  print ignored
+  case i of
+    ShowIgnored -> printPerLine ignored
+    ShowExisting -> printPerLine events
