@@ -2,6 +2,7 @@ module Main where
 
 import Options.Applicative
 import System.FilePath
+import XmlParse
 
 data Settings = Settings
   { file :: FilePath
@@ -23,7 +24,7 @@ settings = Settings
     )
 
 go :: Settings -> IO ()
-go (Settings p r) = putStrLn $ p ++ "; " ++ (if r then "recurse" else "not recurse")
+go (Settings p r) = xmlParse p
 
 main :: IO ()
 main = execParser opts >>= go
