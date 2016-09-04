@@ -24,6 +24,11 @@ data Ignored
   deriving (Show)
 
 data ShowIgnored = ShowIgnored | ShowExisting
+data Settings = Settings
+  { file :: FilePath
+  , recursive :: Bool
+  , showIgnored :: ShowIgnored
+  }
 
 splitIgnored :: (Maybe PositionRange, XML.Event) -> Either Ignored Event
 splitIgnored (_, XML.EventBeginDocument) = Left IgnoredBeginDocument
@@ -47,8 +52,8 @@ splitAllIgnored = foldr (aux . splitIgnored) ([], [])
 printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
-xmlParse :: FilePath -> ShowIgnored -> IO ()
-xmlParse path i = do
+xmlParse :: Settings -> IO ()
+xmlParse (Settings path _ i) = do
   elements <- runResourceT $ sourceFile path =$= parseBytesPos def $$ sinkList
   let (ignored, events) = splitAllIgnored elements
   case i of
