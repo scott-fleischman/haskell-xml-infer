@@ -1,10 +1,18 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module XmlParse where
 
 import Control.Monad.Trans.Resource
 import Conduit
+import Data.Conduit.Attoparsec
 import Data.Text (Text)
 import qualified Data.XML.Types as XML
 import Text.XML.Stream.Parse
+import Text.Megaparsec
+import Text.Megaparsec.Prim
+import Text.Megaparsec.Combinator
+import Text.Megaparsec.Pos
+import Text.Megaparsec.ShowToken
 
 data Event
   = EventBeginElement XML.Name [(XML.Name, [XML.Content])] PositionRange
@@ -12,6 +20,11 @@ data Event
   | EventContent XML.Content PositionRange
   | EventCDATA Text PositionRange
   deriving (Show)
+
+data Tree
+  = TreeElement XML.Name [(XML.Name, [XML.Content])] (PositionRange, PositionRange) [Tree]
+  | TreeContent XML.Content PositionRange
+  | TreeCDATA Text PositionRange
 
 data Ignored
   = IgnoredBeginDocument
@@ -23,7 +36,7 @@ data Ignored
   | IgnoredMissingPosition XML.Event
   deriving (Show)
 
-data ShowIgnored = ShowIgnored | ShowExisting
+data ShowIgnored = ShowIgnored | ShowElements
 data Settings = Settings
   { file :: FilePath
   , recursive :: Bool
@@ -52,10 +65,32 @@ splitAllIgnored = foldr (aux . splitIgnored) ([], [])
 printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
+getEventPositionRange :: Event -> PositionRange
+getEventPositionRange (EventBeginElement _ _ r) = r
+getEventPositionRange (EventEndElement _ r) = r
+getEventPositionRange (EventContent _ r) = r
+getEventPositionRange (EventCDATA _ r) = r
+
+updatePosEvent :: Int -> SourcePos -> Event -> SourcePos
+updatePosEvent _ p = buildPos . posRangeEnd . getEventPositionRange
+  where
+    buildPos (Position l c) = flip setSourceColumn c . flip setSourceLine l $ p
+
+satisfyEvent :: MonadParsec s m Event => (Event -> Bool) -> m Event
+satisfyEvent f = token updatePosEvent testEvent
+  where
+  testEvent x =
+    if f x
+    then Right x
+    else Left . pure . Unexpected . showToken $ x
+
+parseElementEvents :: [Event] -> IO ()
+parseElementEvents events = printPerLine events
+
 xmlParse :: Settings -> IO ()
 xmlParse (Settings path _ i) = do
   elements <- runResourceT $ sourceFile path =$= parseBytesPos def $$ sinkList
   let (ignored, events) = splitAllIgnored elements
   case i of
     ShowIgnored -> printPerLine ignored
-    ShowExisting -> printPerLine events
+    ShowElements -> parseElementEvents events

@@ -17,7 +17,7 @@ settings = Settings
     <> long "recursive"
     <> help "Recursively search PATH for XML files"
     )
-  <*> flag ShowExisting ShowIgnored
+  <*> flag ShowElements ShowIgnored
     ( short 'i'
     <> long "ignored"
     <> help "Show ignored XML events"
