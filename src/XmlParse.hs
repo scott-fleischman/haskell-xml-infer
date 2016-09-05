@@ -1,13 +1,14 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, FlexibleInstances #-}
 
 module XmlParse where
 
 import Control.Monad.Trans.Resource
 import Conduit
 import Data.Conduit.Attoparsec
+import Data.List (intercalate)
 import Data.Text (Text)
 import qualified Data.XML.Types as XML
-import Text.XML.Stream.Parse
+import Text.XML.Stream.Parse (parseBytesPos, def)
 import Text.Megaparsec
 import Text.Megaparsec.Prim
 import Text.Megaparsec.Combinator
@@ -20,11 +21,18 @@ data Event
   | EventContent XML.Content PositionRange
   | EventCDATA Text PositionRange
   deriving (Show)
+instance ShowToken Event where showToken = show
+instance ShowToken [Event] where showToken xs = intercalate "\n" (show <$> xs)
+
+data TreeText
+  = TreeText Text
+  | TreeEntity Text
+  deriving (Show)
 
 data Tree
   = TreeElement XML.Name [(XML.Name, [XML.Content])] (PositionRange, PositionRange) [Tree]
-  | TreeContent XML.Content PositionRange
-  | TreeCDATA Text PositionRange
+  | TreeContent TreeText PositionRange
+  deriving (Show)
 
 data Ignored
   = IgnoredBeginDocument
@@ -76,16 +84,43 @@ updatePosEvent _ p = buildPos . posRangeEnd . getEventPositionRange
   where
     buildPos (Position l c) = flip setSourceColumn c . flip setSourceLine l $ p
 
-satisfyEvent :: MonadParsec s m Event => (Event -> Bool) -> m Event
-satisfyEvent f = token updatePosEvent testEvent
-  where
-  testEvent x =
-    if f x
-    then Right x
-    else Left . pure . Unexpected . showToken $ x
+tryHandle :: MonadParsec s m Event => (Event -> Either [Message] a) -> m a
+tryHandle f = token updatePosEvent f
 
-parseElementEvents :: [Event] -> IO ()
-parseElementEvents events = printPerLine events
+singleUnexpected :: String -> Either [Message] a
+singleUnexpected = Left . pure . Unexpected
+
+parseBegin :: Event -> Either [Message] (XML.Name, [(XML.Name, [XML.Content])], PositionRange)
+parseBegin (EventBeginElement n a p) = Right (n, a, p)
+parseBegin e = singleUnexpected . show $ e
+
+parseEnd :: XML.Name -> Event -> Either [Message] PositionRange
+parseEnd n1 (EventEndElement n2 p) | n1 == n2 = Right p
+parseEnd n e = singleUnexpected $ "Expected end element " ++ show n ++ " but found " ++ show e
+
+contentParser :: Event -> Either [Message] (TreeText, PositionRange)
+contentParser (EventContent (XML.ContentText t) p) = Right (TreeText t, p)
+contentParser (EventContent (XML.ContentEntity e) p) = Right (TreeEntity e, p)
+contentParser (EventCDATA t p) = Right (TreeText t, p)
+contentParser e = singleUnexpected . show $ e
+
+elementContentParser :: MonadParsec s m Event => m Tree
+elementContentParser
+  = elementParser
+  <|> (\(t, p) -> TreeContent t p) <$> tryHandle contentParser
+
+elementParser :: MonadParsec s m Event => m Tree
+elementParser = do
+  (name, attr, beginPos) <- tryHandle parseBegin
+  children <- many elementContentParser
+  endPos <- tryHandle (parseEnd name)
+  return $ TreeElement name attr (beginPos, endPos) children
+
+parseElementEvents :: String -> [Event] -> IO ()
+parseElementEvents sourceName events = do
+  case runParser elementParser sourceName events of
+    Left e -> print e
+    Right x -> print x
 
 xmlParse :: Settings -> IO ()
 xmlParse (Settings path _ i) = do
@@ -93,4 +128,4 @@ xmlParse (Settings path _ i) = do
   let (ignored, events) = splitAllIgnored elements
   case i of
     ShowIgnored -> printPerLine ignored
-    ShowElements -> parseElementEvents events
+    ShowElements -> parseElementEvents path events
