@@ -16,3 +16,10 @@ data Element = Element
   , children :: [Either Element Content]
   }
   deriving (Show)
+
+getEntities :: Element -> [(Text, PositionRange)]
+getEntities (Element _ _ _ xs) = foldr go [] xs
+  where
+    go (Left (Element _ _ _ zs)) ys = foldr go [] zs ++ ys
+    go (Right (ContentText _ _)) ys = ys
+    go (Right (ContentEntity t p)) ys = (t, p) : ys

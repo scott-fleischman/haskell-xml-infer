@@ -33,7 +33,7 @@ printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
 analyzeTree :: Element -> IO ()
-analyzeTree (Element n _ _ _) = print n
+analyzeTree = print
 
 readXml :: Settings -> IO ()
 readXml (Settings path _ i) = do

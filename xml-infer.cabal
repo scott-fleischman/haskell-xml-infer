@@ -6,7 +6,7 @@ homepage:            https://github.com/scott-fleischman/haskell-xml-infer
 license:             MIT
 license-file:        LICENSE
 author:              Scott Fleischman
-maintainer:          example@example.com
+maintainer:          scott-fleischman@users.noreply.github.com
 copyright:           2016 Scott Fleischman
 build-type:          Simple
 cabal-version:       >=1.10
