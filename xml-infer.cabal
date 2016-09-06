@@ -12,10 +12,14 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 executable xml-infer
-  hs-source-dirs:      src
-  main-is:             Main.hs
-  ghc-options:         -Wall -Werror -fwarn-tabs -O2
-  default-language:    Haskell2010
+  hs-source-dirs: src
+  main-is: Main.hs
+  other-modules:
+    XmlEvents,
+    XmlParse,
+    XmlTree
+  ghc-options: -Wall -Werror -fwarn-tabs -O2
+  default-language: Haskell2010
   build-depends:
     base >= 4.7 && < 5,
     text >= 1.2,
@@ -29,7 +33,3 @@ executable xml-infer
     filemanip >=0.3,
     optparse-applicative >=0.12,
     megaparsec >=4.4
-  other-modules:
-    XmlEvents,
-    XmlParse,
-    XmlTree

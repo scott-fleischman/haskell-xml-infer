@@ -14,10 +14,8 @@ data Settings = Settings
 
 settings :: Parser Settings
 settings = Settings
-  <$> strOption
-    ( short 'p'
-    <> long "path"
-    <> metavar "PATH"
+  <$> strArgument
+    ( metavar "PATH"
     <> help "Path to an XML file or directory of XML files"
     )
   <*> switch
@@ -34,11 +32,8 @@ settings = Settings
 printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
-analyzeTree :: Tree -> IO ()
-analyzeTree tree = do
-  case tree of
-    TreeElement n _ _ _ -> print n
-    TreeContent _ _ -> print "Root content"
+analyzeTree :: Element -> IO ()
+analyzeTree (Element n _ _ _) = print n
 
 readXml :: Settings -> IO ()
 readXml (Settings path _ i) = do

@@ -3,15 +3,12 @@
 module XmlParse where
 
 import Data.Conduit.Attoparsec
-import Data.Text (Text)
 import qualified Data.XML.Types as XML
 import Text.Megaparsec
 import Text.Megaparsec.Prim
-import Text.Megaparsec.Combinator
 import Text.Megaparsec.Pos
-import Text.Megaparsec.ShowToken
 import XmlEvents
-import XmlTree
+import qualified XmlTree as Tree
 
 getEventPositionRange :: Event -> PositionRange
 getEventPositionRange (EventBeginElement _ _ r) = r
@@ -38,26 +35,26 @@ parseEnd :: XML.Name -> Event -> Either [Message] PositionRange
 parseEnd n1 (EventEndElement n2 p) | n1 == n2 = Right p
 parseEnd n e = singleUnexpected $ "Expected end element " ++ show n ++ " but found " ++ show e
 
-contentParser :: Event -> Either [Message] (TreeText, PositionRange)
-contentParser (EventContent (XML.ContentText t) p) = Right (TreeText t, p)
-contentParser (EventContent (XML.ContentEntity e) p) = Right (TreeEntity e, p)
-contentParser (EventCDATA t p) = Right (TreeText t, p)
-contentParser e = singleUnexpected . show $ e
+eventToContent :: Event -> Either [Message] Tree.Content
+eventToContent (EventContent (XML.ContentText t) p) = Right (Tree.ContentText t p)
+eventToContent (EventContent (XML.ContentEntity e) p) = Right (Tree.ContentEntity e p)
+eventToContent (EventCDATA t p) = Right (Tree.ContentText t p)
+eventToContent e = singleUnexpected . show $ e
 
-elementContentParser :: MonadParsec s m Event => m Tree
-elementContentParser
-  = elementParser
-  <|> (\(t, p) -> TreeContent t p) <$> tryHandle contentParser
+elementOrContentParser :: MonadParsec s m Event => m (Either Tree.Element Tree.Content)
+elementOrContentParser
+  = (Left <$> elementParser)
+  <|> (Right <$> tryHandle eventToContent)
 
-elementParser :: MonadParsec s m Event => m Tree
+elementParser :: MonadParsec s m Event => m Tree.Element
 elementParser = do
   (name, attr, beginPos) <- tryHandle parseBegin
-  children <- many elementContentParser
+  children <- many elementOrContentParser
   endPos <- tryHandle (parseEnd name)
-  return $ TreeElement name attr (beginPos, endPos) children
+  return $ Tree.Element name attr (beginPos, endPos) children
 
-parseElementEvents :: String -> [Event] -> Either [String] Tree
-parseElementEvents sourceName events = do
-  case runParser elementParser sourceName events of
+parseElementEvents :: String -> [Event] -> Either [String] Tree.Element
+parseElementEvents source events = do
+  case runParser elementParser source events of
     Left e -> Left (messageString <$> errorMessages e)
     Right x -> Right x

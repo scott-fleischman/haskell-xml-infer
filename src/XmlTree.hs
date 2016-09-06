@@ -4,12 +4,15 @@ import Data.Conduit.Attoparsec (PositionRange)
 import Data.Text (Text)
 import qualified Data.XML.Types as XML
 
-data TreeText
-  = TreeText Text
-  | TreeEntity Text
+data Content
+  = ContentText Text PositionRange
+  | ContentEntity Text PositionRange
   deriving (Show)
 
-data Tree
-  = TreeElement XML.Name [(XML.Name, [XML.Content])] (PositionRange, PositionRange) [Tree]
-  | TreeContent TreeText PositionRange
+data Element = Element
+  { name :: XML.Name
+  , attributes :: [(XML.Name, [XML.Content])]
+  , positionStart :: (PositionRange, PositionRange)
+  , children :: [Either Element Content]
+  }
   deriving (Show)
