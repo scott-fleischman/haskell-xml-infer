@@ -1,8 +1,16 @@
 module Main where
 
 import Options.Applicative
-import System.FilePath
+import XmlEvents
 import XmlParse
+import XmlTree
+
+data ShowIgnored = ShowIgnored | ShowElements
+data Settings = Settings
+  { file :: FilePath
+  , recursive :: Bool
+  , showIgnored :: ShowIgnored
+  }
 
 settings :: Parser Settings
 settings = Settings
@@ -23,8 +31,26 @@ settings = Settings
     <> help "Show ignored XML events"
     )
 
+printPerLine :: (Show a) => [a] -> IO ()
+printPerLine = mapM_ print
+
+analyzeTree :: Tree -> IO ()
+analyzeTree tree = do
+  case tree of
+    TreeElement n _ _ _ -> print n
+    TreeContent _ _ -> print "Root content"
+
+readXml :: Settings -> IO ()
+readXml (Settings path _ i) = do
+  (ignored, events) <- readEvents path
+  case i of
+    ShowIgnored -> printPerLine ignored
+    ShowElements -> case parseElementEvents path events of
+      Left e -> printPerLine e
+      Right x -> analyzeTree x
+
 main :: IO ()
-main = execParser opts >>= xmlParse
+main = execParser opts >>= readXml
   where
   opts = info (helper <*> settings)
     ( fullDesc
