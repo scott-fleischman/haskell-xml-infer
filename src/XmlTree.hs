@@ -4,9 +4,7 @@ import Data.Conduit.Attoparsec (PositionRange)
 import Data.Text (Text)
 import qualified Data.XML.Types as XML
 
-data Content
-  = ContentText Text PositionRange
-  | ContentEntity Text PositionRange
+data Content = Content Text PositionRange
   deriving (Show)
 
 data Element = Element
@@ -21,5 +19,4 @@ getEntities :: Element -> [(Text, PositionRange)]
 getEntities (Element _ _ _ xs) = foldr go [] xs
   where
     go (Left (Element _ _ _ zs)) ys = foldr go [] zs ++ ys
-    go (Right (ContentText _ _)) ys = ys
-    go (Right (ContentEntity t p)) ys = (t, p) : ys
+    go (Right (Content _ _)) ys = ys

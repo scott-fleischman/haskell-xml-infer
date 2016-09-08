@@ -36,9 +36,8 @@ parseEnd n1 (EventEndElement n2 p) | n1 == n2 = Right p
 parseEnd n e = singleUnexpected $ "Expected end element " ++ show n ++ " but found " ++ show e
 
 eventToContent :: Event -> Either [Message] Tree.Content
-eventToContent (EventContent (XML.ContentText t) p) = Right (Tree.ContentText t p)
-eventToContent (EventContent (XML.ContentEntity e) p) = Right (Tree.ContentEntity e p)
-eventToContent (EventCDATA t p) = Right (Tree.ContentText t p)
+eventToContent (EventContent (XML.ContentText t) p) = Right (Tree.Content t p)
+eventToContent (EventCDATA t p) = Right (Tree.Content t p)
 eventToContent e = singleUnexpected . show $ e
 
 elementOrContentParser :: MonadParsec s m Event => m (Either Tree.Element Tree.Content)
