@@ -16,6 +16,7 @@ executable xml-infer
   main-is: Main.hs
   other-modules:
     XmlEvents,
+    XmlInfer,
     XmlParse,
     XmlTree
   ghc-options: -Wall -Werror -fwarn-tabs -O2
