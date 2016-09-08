@@ -5,15 +5,16 @@ import Data.Text (Text)
 import qualified Data.XML.Types as XML
 
 data Content = Content
-  { contentText :: Text
-  , contentPosition :: PositionRange
+  { text :: Text
+  , position :: PositionRange
   }
   deriving (Show)
 
 data Element = Element
   { name :: XML.Name
   , attributes :: [(XML.Name, [XML.Content])]
-  , positionStart :: (PositionRange, PositionRange)
+  , startPosition :: PositionRange
+  , endPosition :: PositionRange
   , children :: [Either Element Content]
   }
   deriving (Show)

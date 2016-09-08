@@ -50,11 +50,11 @@ concatContent = do
   case contents of
     [] -> fail "Empty content list"
     (x : xs) ->
-      let text = Text.concat $ Tree.contentText <$> (x : xs)
+      let text = Text.concat $ Tree.text <$> (x : xs)
       in
         if Text.null text
         then fail "Empty content"
-        else return $ Tree.Content text (foldr mergePositionRange (Tree.contentPosition x) (Tree.contentPosition <$> xs))
+        else return $ Tree.Content text (foldr mergePositionRange (Tree.position x) (Tree.position <$> xs))
 
 elementOrContentParser :: MonadParsec s m Event => m (Either Tree.Element Tree.Content)
 elementOrContentParser
@@ -66,7 +66,7 @@ elementParser = do
   (name, attr, beginPos) <- tryHandle parseBegin
   children <- many elementOrContentParser
   endPos <- tryHandle (parseEnd name)
-  return $ Tree.Element name attr (beginPos, endPos) children
+  return $ Tree.Element name attr beginPos endPos children
 
 parseElementEvents :: String -> [Event] -> Either [String] Tree.Element
 parseElementEvents source events = do
