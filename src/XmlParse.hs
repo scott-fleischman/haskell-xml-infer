@@ -3,6 +3,7 @@
 module XmlParse where
 
 import Data.Conduit.Attoparsec
+import qualified Data.Text as Text
 import qualified Data.XML.Types as XML
 import Text.Megaparsec
 import Text.Megaparsec.Prim
@@ -40,10 +41,25 @@ eventToContent (EventContent (XML.ContentText t) p) = Right (Tree.Content t p)
 eventToContent (EventCDATA t p) = Right (Tree.Content t p)
 eventToContent e = singleUnexpected . show $ e
 
+mergePositionRange :: PositionRange -> PositionRange -> PositionRange
+mergePositionRange (PositionRange p1 p2) (PositionRange p3 p4) = PositionRange (minimum positions) (maximum positions) where positions = [p1, p2, p3, p4]
+
+concatContent :: MonadParsec s m Event => m Tree.Content
+concatContent = do
+  contents <- some (tryHandle eventToContent)
+  case contents of
+    [] -> fail "Empty content list"
+    (x : xs) ->
+      let text = Text.concat $ Tree.contentText <$> (x : xs)
+      in
+        if Text.null text
+        then fail "Empty content"
+        else return $ Tree.Content text (foldr mergePositionRange (Tree.contentPosition x) (Tree.contentPosition <$> xs))
+
 elementOrContentParser :: MonadParsec s m Event => m (Either Tree.Element Tree.Content)
 elementOrContentParser
   = (Left <$> elementParser)
-  <|> (Right <$> tryHandle eventToContent)
+  <|> (Right <$> concatContent)
 
 elementParser :: MonadParsec s m Event => m Tree.Element
 elementParser = do
