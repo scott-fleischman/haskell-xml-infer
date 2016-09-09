@@ -2,6 +2,7 @@ module Main where
 
 import Options.Applicative
 import XmlEvents
+import XmlInfer
 import XmlParse
 import XmlTree
 
@@ -33,7 +34,9 @@ printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
 analyzeTree :: Element -> IO ()
-analyzeTree = print
+analyzeTree e = do
+  let m = infer e
+  print m
 
 readXml :: Settings -> IO ()
 readXml (Settings path _ i) = do

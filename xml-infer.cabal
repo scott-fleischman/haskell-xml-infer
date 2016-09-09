@@ -23,6 +23,7 @@ executable xml-infer
   default-language: Haskell2010
   build-depends:
     base >= 4.7 && < 5,
+    containers >=0.5,
     text >= 1.2,
     resourcet >=1.1,
     xml-types >=0.3,
