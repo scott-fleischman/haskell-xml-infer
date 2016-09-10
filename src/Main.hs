@@ -1,5 +1,12 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
+import Data.Text (Text)
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text
+import qualified Data.Map.Strict as Map
+import qualified Data.XML.Types as XML
 import Options.Applicative
 import XmlEvents
 import XmlInfer
@@ -33,10 +40,27 @@ settings = Settings
 printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
+showName :: XML.Name -> Text
+showName (XML.Name ln _ Nothing) = Text.concat ["<", ln, ">"]
+showName (XML.Name ln _ (Just p)) = Text.concat ["<", p, ":", ln, ">"]
+
+textShow :: (Show a) => a -> Text
+textShow = Text.pack . show
+
+showResultKind :: ResultKind -> Text
+showResultKind (XmlInfer.Element n) = showName n
+showResultKind x = textShow x
+
+printParent :: (XML.Name, Map.Map ResultKind Int) -> IO ()
+printParent (n, m) = do
+  Text.putStrLn . showName $ n
+  let kindCounts = (\(k, l) -> Text.concat ["  ", showResultKind k, " — ", textShow l]) <$> (Map.assocs m)
+  mapM_ Text.putStrLn kindCounts
+
 analyzeTree :: Element -> IO ()
 analyzeTree e = do
   let m = infer e
-  print m
+  mapM_ printParent (Map.assocs ((fmap . fmap) length m))
 
 readXml :: Settings -> IO ()
 readXml (Settings path _ i) = do
