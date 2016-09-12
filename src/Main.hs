@@ -2,7 +2,6 @@
 
 module Main where
 
-import Data.Conduit.Attoparsec (PositionRange)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
@@ -65,15 +64,18 @@ showParentName :: Parent -> Text
 showParentName NoParent = "-"
 showParentName (Parent n) = showName n
 
-printChild :: InstanceCount -> (ResultKind, [PositionRange]) -> IO ()
+showLocation :: Location -> Text
+showLocation (Location src p) = Text.concat [Text.pack src, ":", textShow p]
+
+printChild :: InstanceCount -> (ResultKind, [Location]) -> IO ()
 printChild c (k, ps) = do
   Text.putStrLn . Text.concat $ ["  ", showResultKind k, " — ", textShow . length $ ps]
-  mapM_ (Text.putStrLn . Text.append "    " . textShow) (take (getInstanceCount c) ps)
+  mapM_ (Text.putStrLn . Text.append "    " . showLocation) (take (getInstanceCount c) ps)
 
 printParent :: InstanceCount -> (Parent, ElementInfo) -> IO ()
 printParent c (pn, ei) = do
   Text.putStrLn $ Text.concat [showParentName pn, " ", textShow . XmlInfer.count $ ei]
-  mapM_ (printChild c) (Map.assocs . XmlInfer.results $ ei)
+  mapM_ (printChild c) (Map.assocs . XmlInfer.instances $ ei)
 
 analyzeTree :: InstanceCount -> Element -> IO ()
 analyzeTree c e = do

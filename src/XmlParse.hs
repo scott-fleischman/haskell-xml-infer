@@ -11,16 +11,18 @@ import Text.Megaparsec.Pos
 import XmlEvents
 import qualified XmlTree as Tree
 
-getEventPositionRange :: Event -> PositionRange
-getEventPositionRange (EventBeginElement _ _ r) = r
-getEventPositionRange (EventEndElement _ r) = r
-getEventPositionRange (EventContent _ r) = r
-getEventPositionRange (EventCDATA _ r) = r
+getEventLocation :: Event -> Location
+getEventLocation (EventBeginElement _ _ r) = r
+getEventLocation (EventEndElement _ r) = r
+getEventLocation (EventContent _ r) = r
+getEventLocation (EventCDATA _ r) = r
 
 updatePosEvent :: Int -> SourcePos -> Event -> SourcePos
-updatePosEvent _ p = buildPos . posRangeEnd . getEventPositionRange
+updatePosEvent _ p e = buildPos src startPos
   where
-    buildPos (Position l c) = flip setSourceColumn c . flip setSourceLine l $ p
+    (Location src pos) = getEventLocation e
+    startPos = posRangeStart pos
+    buildPos n (Position l c) = flip setSourceName n . flip setSourceColumn c . flip setSourceLine l $ p
 
 tryHandle :: MonadParsec s m Event => (Event -> Either [Message] a) -> m a
 tryHandle f = token updatePosEvent f
@@ -28,11 +30,11 @@ tryHandle f = token updatePosEvent f
 singleUnexpected :: String -> Either [Message] a
 singleUnexpected = Left . pure . Unexpected
 
-parseBegin :: Event -> Either [Message] (XML.Name, [(XML.Name, [XML.Content])], PositionRange)
+parseBegin :: Event -> Either [Message] (XML.Name, [(XML.Name, [XML.Content])], Location)
 parseBegin (EventBeginElement n a p) = Right (n, a, p)
 parseBegin e = singleUnexpected . show $ e
 
-parseEnd :: XML.Name -> Event -> Either [Message] PositionRange
+parseEnd :: XML.Name -> Event -> Either [Message] Location
 parseEnd n1 (EventEndElement n2 p) | n1 == n2 = Right p
 parseEnd n e = singleUnexpected $ "Expected end element " ++ show n ++ " but found " ++ show e
 
@@ -44,17 +46,20 @@ eventToContent e = singleUnexpected . show $ e
 mergePositionRange :: PositionRange -> PositionRange -> PositionRange
 mergePositionRange (PositionRange p1 p2) (PositionRange p3 p4) = PositionRange (minimum positions) (maximum positions) where positions = [p1, p2, p3, p4]
 
+mergeLocation :: Location -> Location -> Location
+mergeLocation (Location src1 p1) (Location _ p2) = Location src1 (mergePositionRange p1 p2)
+
 concatContent :: MonadParsec s m Event => m Tree.Content
 concatContent = do
   contents <- some (tryHandle eventToContent)
   case contents of
     [] -> fail "Empty content list"
     (x : xs) ->
-      let text = Text.concat $ Tree.text <$> (x : xs)
+      let text = Text.concat $ Tree.text <$> contents
       in
         if Text.null text
         then fail "Empty content"
-        else return $ Tree.Content text (foldr mergePositionRange (Tree.position x) (Tree.position <$> xs))
+        else return $ Tree.Content text (foldr mergeLocation (Tree.location x) (Tree.location <$> xs))
 
 elementOrContentParser :: MonadParsec s m Event => m (Either Tree.Element Tree.Content)
 elementOrContentParser

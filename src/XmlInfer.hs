@@ -1,12 +1,12 @@
 module XmlInfer where
 
 import qualified Data.Char as Char
-import Data.Conduit.Attoparsec (PositionRange)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import qualified Data.Text as Text
 import qualified Data.XML.Types as XML
 import qualified XmlTree as Tree
+import XmlEvents (Location)
 
 data ResultKind
   = Whitespace
@@ -16,7 +16,7 @@ data ResultKind
 
 data ElementInfo = ElementInfo
   { count :: Int
-  , results :: Map ResultKind [PositionRange]
+  , instances :: Map ResultKind [Location]
   }
 
 data Parent
@@ -29,7 +29,7 @@ type TreeInfo = Map Parent ElementInfo
 addResult
   :: Parent
   -> ResultKind
-  -> PositionRange
+  -> Location
   -> TreeInfo
   -> TreeInfo
 addResult pn k p m = case Map.lookup pn m of
