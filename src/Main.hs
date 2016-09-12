@@ -53,19 +53,23 @@ printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
 showName :: XML.Name -> Text
-showName (XML.Name ln _ Nothing) = Text.concat ["<", ln, ">"]
-showName (XML.Name ln _ (Just p)) = Text.concat ["<", p, ":", ln, ">"]
+showName (XML.Name ln _ Nothing) = ln
+showName (XML.Name ln _ (Just p)) = Text.concat [p, ":", ln]
 
 textShow :: (Show a) => a -> Text
 textShow = Text.pack . show
 
+showAttribute :: XML.Name -> Text
+showAttribute x = Text.concat ["<", showName x, ">"]
+
 showResultKind :: ResultKind -> Text
-showResultKind (XmlInfer.Element n) = showName n
+showResultKind (XmlInfer.Element n) = showAttribute n
+showResultKind (XmlInfer.Attribute n) = Text.concat [showName n, "=\"…\""]
 showResultKind x = textShow x
 
 showParentName :: Parent -> Text
 showParentName NoParent = "-"
-showParentName (Parent n) = showName n
+showParentName (Parent n) = showAttribute n
 
 showLocation :: Location -> Text
 showLocation (Location src p) = Text.concat [Text.pack src, ":", textShow p]

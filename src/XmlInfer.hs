@@ -12,6 +12,7 @@ data ResultKind
   = Whitespace
   | Content
   | Element XML.Name
+  | Attribute XML.Name
   deriving (Eq, Ord, Show)
 
 data ElementInfo = ElementInfo
@@ -61,11 +62,13 @@ addElement
   -> Tree.Element
   -> TreeInfo
   -> TreeInfo
-addElement pn (Tree.Element n _ p _ cs) m = addedChildren
+addElement pn (Tree.Element n as p _ cs) m = addedAttributes
   where
-    addedSelfCount = incrementElementCount (Parent n) m
+    selfParent = Parent n
+    addedSelfCount = incrementElementCount selfParent m
     addedAsChild = addResult pn (Element n) p addedSelfCount
-    addedChildren = foldr (addChildResult (Parent n)) addedAsChild cs
+    addedChildren = foldr (addChildResult selfParent) addedAsChild cs
+    addedAttributes = foldr (\an -> addResult selfParent (Attribute an) p) addedChildren (fst <$> as)
 
 infer :: Tree.Element -> TreeInfo
 infer e = addElement NoParent e Map.empty
