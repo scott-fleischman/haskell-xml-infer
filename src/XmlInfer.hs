@@ -14,35 +14,58 @@ data ResultKind
   | Element XML.Name
   deriving (Eq, Ord, Show)
 
-data Result = Result
-  { kind :: ResultKind
-  , position :: PositionRange
+data ElementInfo = ElementInfo
+  { count :: Int
+  , results :: Map ResultKind [PositionRange]
   }
-  deriving (Show)
 
-contentToResult :: Tree.Content -> Result
-contentToResult (Tree.Content t p) | Text.all Char.isSpace t = Result Whitespace p
-contentToResult (Tree.Content _ p) = Result Content p
+data Parent
+  = NoParent
+  | Parent XML.Name
+  deriving (Eq, Ord, Show)
+
+type TreeInfo = Map Parent ElementInfo
 
 addResult
-  :: XML.Name
-  -> Result
-  -> Map XML.Name (Map ResultKind [PositionRange])
-  -> Map XML.Name (Map ResultKind [PositionRange])
-addResult n (Result k p) m = case Map.lookup n m of
-  Just mk -> Map.insert n kindMap m where
+  :: Parent
+  -> ResultKind
+  -> PositionRange
+  -> TreeInfo
+  -> TreeInfo
+addResult pn k p m = case Map.lookup pn m of
+  Just (ElementInfo c mk) -> Map.insert pn kindMap m where
     kindMap = case Map.lookup k mk of
-      Just ps -> Map.insert k (p : ps) mk
-      Nothing -> Map.insert k [p] mk
-  Nothing -> Map.insert n (Map.insert k [p] Map.empty) m
+      Just ps -> ElementInfo c (Map.insert k (p : ps) mk)
+      Nothing -> ElementInfo c (Map.insert k [p] mk)
+  Nothing -> Map.insert pn (ElementInfo 0 (Map.insert k [p] Map.empty)) m
 
 addChildResult
-  :: XML.Name
+  :: Parent
   -> Either Tree.Element Tree.Content
-  -> Map XML.Name (Map ResultKind [PositionRange])
-  -> Map XML.Name (Map ResultKind [PositionRange])
-addChildResult n (Left (Tree.Element n2 _ p _ cs)) m = foldr (addChildResult n2) (addResult n (Result (Element n2) p) m) cs
-addChildResult n (Right c@(Tree.Content _ _)) m = addResult n (contentToResult c) m
+  -> TreeInfo
+  -> TreeInfo
+addChildResult n (Left e) m = addElement n e m
+addChildResult n (Right (Tree.Content t p)) m | Text.all Char.isSpace t = addResult n Whitespace p m
+addChildResult n (Right (Tree.Content _ p)) m = addResult n Content p m
 
-infer :: Tree.Element -> Map XML.Name (Map ResultKind [PositionRange])
-infer (Tree.Element n _ _ _ cs) = foldr (addChildResult n) Map.empty cs
+incrementElementCount
+  :: Parent
+  -> TreeInfo
+  -> TreeInfo
+incrementElementCount pn m = case Map.lookup pn m of
+  Just (ElementInfo c mk) -> Map.insert pn (ElementInfo (c + 1) mk) m
+  Nothing -> Map.insert pn (ElementInfo 1 Map.empty) m
+
+addElement
+  :: Parent
+  -> Tree.Element
+  -> TreeInfo
+  -> TreeInfo
+addElement pn (Tree.Element n _ p _ cs) m = addedChildren
+  where
+    addedSelfCount = incrementElementCount (Parent n) m
+    addedAsChild = addResult pn (Element n) p addedSelfCount
+    addedChildren = foldr (addChildResult (Parent n)) addedAsChild cs
+
+infer :: Tree.Element -> TreeInfo
+infer e = addElement NoParent e Map.empty

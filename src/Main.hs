@@ -51,16 +51,20 @@ showResultKind :: ResultKind -> Text
 showResultKind (XmlInfer.Element n) = showName n
 showResultKind x = textShow x
 
-printParent :: (XML.Name, Map.Map ResultKind Int) -> IO ()
-printParent (n, m) = do
-  Text.putStrLn . showName $ n
-  let kindCounts = (\(k, l) -> Text.concat ["  ", showResultKind k, " — ", textShow l]) <$> (Map.assocs m)
+showParentName :: Parent -> Text
+showParentName NoParent = "-"
+showParentName (Parent n) = showName n
+
+printParent :: (Parent, ElementInfo) -> IO ()
+printParent (pn, ei) = do
+  Text.putStrLn $ Text.concat [showParentName pn, " ", textShow . XmlInfer.count $ ei]
+  let kindCounts = (\(k, l) -> Text.concat ["  ", showResultKind k, " — ", textShow . length $ l]) <$> (Map.assocs . XmlInfer.results $ ei)
   mapM_ Text.putStrLn kindCounts
 
 analyzeTree :: Element -> IO ()
 analyzeTree e = do
   let m = infer e
-  mapM_ printParent (Map.assocs ((fmap . fmap) length m))
+  mapM_ printParent (Map.assocs m)
 
 readXml :: Settings -> IO ()
 readXml (Settings path _ i) = do
