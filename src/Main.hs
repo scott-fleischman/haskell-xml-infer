@@ -2,6 +2,7 @@
 
 module Main where
 
+import Data.Conduit.Attoparsec (PositionRange)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
@@ -13,11 +14,13 @@ import XmlInfer
 import XmlParse
 import XmlTree
 
+newtype InstanceCount = InstanceCount { getInstanceCount :: Int }
 data ShowIgnored = ShowIgnored | ShowElements
 data Settings = Settings
   { file :: FilePath
   , recursive :: Bool
   , showIgnored :: ShowIgnored
+  , instanceCount :: Int
   }
 
 settings :: Parser Settings
@@ -35,6 +38,13 @@ settings = Settings
     ( short 'i'
     <> long "ignored"
     <> help "Show ignored XML events"
+    )
+  <*> option auto
+    ( short 'c'
+    <> long "instance-count"
+    <> value 0
+    <> metavar "COUNT"
+    <> help "Number of instances to show"
     )
 
 printPerLine :: (Show a) => [a] -> IO ()
@@ -55,25 +65,29 @@ showParentName :: Parent -> Text
 showParentName NoParent = "-"
 showParentName (Parent n) = showName n
 
-printParent :: (Parent, ElementInfo) -> IO ()
-printParent (pn, ei) = do
-  Text.putStrLn $ Text.concat [showParentName pn, " ", textShow . XmlInfer.count $ ei]
-  let kindCounts = (\(k, l) -> Text.concat ["  ", showResultKind k, " — ", textShow . length $ l]) <$> (Map.assocs . XmlInfer.results $ ei)
-  mapM_ Text.putStrLn kindCounts
+printChild :: InstanceCount -> (ResultKind, [PositionRange]) -> IO ()
+printChild c (k, ps) = do
+  Text.putStrLn . Text.concat $ ["  ", showResultKind k, " — ", textShow . length $ ps]
+  mapM_ (Text.putStrLn . Text.append "    " . textShow) (take (getInstanceCount c) ps)
 
-analyzeTree :: Element -> IO ()
-analyzeTree e = do
+printParent :: InstanceCount -> (Parent, ElementInfo) -> IO ()
+printParent c (pn, ei) = do
+  Text.putStrLn $ Text.concat [showParentName pn, " ", textShow . XmlInfer.count $ ei]
+  mapM_ (printChild c) (Map.assocs . XmlInfer.results $ ei)
+
+analyzeTree :: InstanceCount -> Element -> IO ()
+analyzeTree c e = do
   let m = infer e
-  mapM_ printParent (Map.assocs m)
+  mapM_ (printParent c) (Map.assocs m)
 
 readXml :: Settings -> IO ()
-readXml (Settings path _ i) = do
+readXml (Settings path _ i c) = do
   (ignored, events) <- readEvents path
   case i of
     ShowIgnored -> printPerLine ignored
     ShowElements -> case parseElementEvents path events of
       Left e -> printPerLine e
-      Right x -> analyzeTree x
+      Right x -> analyzeTree (InstanceCount c) x
 
 main :: IO ()
 main = execParser opts >>= readXml
