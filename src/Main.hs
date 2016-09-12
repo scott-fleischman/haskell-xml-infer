@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
@@ -13,13 +14,15 @@ import XmlInfer
 import XmlParse
 import XmlTree
 
-newtype InstanceCount = InstanceCount { getInstanceCount :: Int }
+newtype InstanceCount = InstanceCount { getInstanceCount :: Int } deriving Num
+instance Read InstanceCount where readsPrec i s = (\(a, b) -> (InstanceCount a, b)) <$> readsPrec i s
+
 data ShowIgnored = ShowIgnored | ShowElements
 data Settings = Settings
   { file :: FilePath
   , recursive :: Bool
   , showIgnored :: ShowIgnored
-  , instanceCount :: Int
+  , instanceCount :: InstanceCount
   }
 
 settings :: Parser Settings
@@ -89,7 +92,7 @@ readXml (Settings path _ i c) = do
     ShowIgnored -> printPerLine ignored
     ShowElements -> case parseElementEvents path events of
       Left e -> printPerLine e
-      Right x -> analyzeTree (InstanceCount c) x
+      Right x -> analyzeTree c x
 
 main :: IO ()
 main = execParser opts >>= readXml
