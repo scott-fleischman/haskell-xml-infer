@@ -3,6 +3,9 @@
 
 module Main where
 
+import qualified Data.List as List
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
@@ -63,13 +66,41 @@ showChild x = textShow x
 showLocation :: Location -> Text
 showLocation (Location src p) = Text.concat [Text.pack src, ":", textShow p]
 
+showAncestors :: Ancestors -> Text
+showAncestors (Ancestors []) = "(root)"
+showAncestors (Ancestors ns@(_ : _)) = Text.concat . List.intersperse " " . fmap showElementName . reverse $ ns
+
+printAncestors :: Ancestors -> [Location] -> IO ()
+printAncestors a ls = do
+  Text.putStrLn $ Text.concat ["    ", showAncestors a, ": ", textShow . length $ ls]
+
+printChildInstance :: Child -> [Location] -> IO ()
+printChildInstance c ls = do
+  Text.putStrLn $ Text.concat ["    ", showChild c, ": ", textShow . length $ ls]
+
+showChildSet :: Set Child -> Text
+showChildSet s =
+  if Set.null s
+  then "(empty)"
+  else Text.concat . List.intersperse ", " . fmap showChild . Set.toList $ s
+
+printChildSet :: Set Child -> [Location] -> IO ()
+printChildSet s ls = do
+  Text.putStrLn $ Text.concat ["    ", showChildSet s, ": ", textShow . length $ ls]
+
 printElementInfo :: (XML.Name, ElementInfo) -> IO ()
 printElementInfo (n, i) = do
   Text.putStrLn $ showElementName n
   Text.putStrLn $ Text.concat ["  locations: ", textShow . length . locations $ i]
-  Text.putStrLn $ Text.concat ["  ancestors: ", textShow . Map.keys . ancestors $ i]
-  Text.putStrLn $ Text.concat ["  child instances: ", textShow . Map.keys . childInstances $ i]
-  Text.putStrLn $ Text.concat ["  child sets: ", textShow . Map.keys . childSets $ i]
+
+  Text.putStrLn "  ancestors:"
+  mapM_ (uncurry printAncestors) (Map.assocs . ancestors $ i)
+
+  Text.putStrLn "  child instances:"
+  mapM_ (uncurry printChildInstance) (Map.assocs . childInstances $ i)
+
+  Text.putStrLn "  child sets:"
+  mapM_ (uncurry printChildSet) (Map.assocs . childSets $ i)
 
 analyzeTree :: Settings -> Element -> IO ()
 analyzeTree _ e = do

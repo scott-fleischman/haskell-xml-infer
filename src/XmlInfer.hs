@@ -12,10 +12,10 @@ import qualified XmlTree as Tree
 import XmlEvents (Location)
 
 data Child
-  = Whitespace
-  | Content
+  = Attribute XML.Name
   | Element XML.Name
-  | Attribute XML.Name
+  | Content
+  | Whitespace
   deriving (Eq, Ord, Show)
 
 data Ancestors = Ancestors { getAncestors :: [XML.Name] }
