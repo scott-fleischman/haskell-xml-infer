@@ -109,10 +109,15 @@ printChildSet :: Set Child -> [Location] -> IO ()
 printChildSet s ls = do
   Text.putStrLn $ Text.concat ["    ", showChildSet s, ": ", textShow . length $ ls]
 
-printElementInfo :: (XML.Name, ElementInfo) -> IO ()
-printElementInfo (n, i) = do
+printLocationsInfo :: Int -> Text -> Text -> [Location] -> IO ()
+printLocationsInfo ct indent label ls = do
+  Text.putStrLn $ Text.concat [indent, label, ": ", textShow . length $ ls]
+  mapM_ (\l -> Text.putStrLn $ Text.concat [indent, "  ", showLocation l]) (take ct ls)
+
+printElementInfo :: Settings -> (XML.Name, ElementInfo) -> IO ()
+printElementInfo s (n, i) = do
   Text.putStrLn $ showElementName n
-  Text.putStrLn $ Text.concat ["  locations: ", textShow . length . locations $ i]
+  printLocationsInfo (locationCount s) "  " "locations" (locations i)
 
   Text.putStrLn "  ancestors:"
   mapM_ (uncurry printAncestors) (Map.assocs . ancestors $ i)
@@ -124,9 +129,9 @@ printElementInfo (n, i) = do
   mapM_ (uncurry printChildSet) (Map.assocs . childSets $ i)
 
 analyzeTree :: Settings -> Element -> IO ()
-analyzeTree _ e = do
+analyzeTree s e = do
   let m = infer e
-  mapM_ printElementInfo (Map.assocs m)
+  mapM_ (printElementInfo s) (Map.assocs m)
 
 readXml :: Settings -> IO ()
 readXml s = do
