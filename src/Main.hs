@@ -106,23 +106,11 @@ showAncestors :: Ancestors -> Text
 showAncestors (Ancestors []) = "(root)"
 showAncestors (Ancestors ns@(_ : _)) = Text.concat . List.intersperse " " . fmap showElementName . reverse $ ns
 
-printAncestors :: Ancestors -> [Location] -> IO ()
-printAncestors a ls = do
-  Text.putStrLn $ Text.concat ["    ", showAncestors a, ": ", textShow . length $ ls]
-
-printChildInstance :: Child -> [Location] -> IO ()
-printChildInstance c ls = do
-  Text.putStrLn $ Text.concat ["    ", showChild c, ": ", textShow . length $ ls]
-
 showChildSet :: Set Child -> Text
 showChildSet s =
   if Set.null s
   then "(empty)"
   else Text.concat . List.intersperse ", " . fmap showChild . Set.toList $ s
-
-printChildSet :: Set Child -> [Location] -> IO ()
-printChildSet s ls = do
-  Text.putStrLn $ Text.concat ["    ", showChildSet s, ": ", textShow . length $ ls]
 
 printWithIndent :: Indent -> Text -> IO ()
 printWithIndent i t = Text.putStrLn $ Text.concat [showIndent i, t]
@@ -141,14 +129,9 @@ printElementInfo :: Settings -> (XML.Name, ElementInfo) -> IO ()
 printElementInfo s (n, i) = do
   Text.putStrLn $ showElementName n
   printLocationsInfo (locationCount s) singleIndent "locations" (locations i)
-
   printMapInfo (ancestorCount s) "ancestors" showAncestors (ancestors i)
-
-  printWithIndent singleIndent "child instances:"
-  mapM_ (uncurry printChildInstance) (Map.assocs . childInstances $ i)
-
-  printWithIndent singleIndent "child sets:"
-  mapM_ (uncurry printChildSet) (Map.assocs . childSets $ i)
+  printMapInfo (childInstanceCount s) "child instances" showChild (childInstances i)
+  printMapInfo (childSetCount s) "child sets" showChildSet (childSets i)
 
 analyzeTree :: Settings -> Element -> IO ()
 analyzeTree s e = do
