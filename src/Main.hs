@@ -20,7 +20,6 @@ instance Read InstanceCount where readsPrec i s = (\(a, b) -> (InstanceCount a, 
 data ShowIgnored = ShowIgnored | ShowElements
 data Settings = Settings
   { file :: FilePath
-  , recursive :: Bool
   , showIgnored :: ShowIgnored
   , instanceCount :: InstanceCount
   }
@@ -31,22 +30,16 @@ settings = Settings
     ( metavar "PATH"
     <> help "Path to an XML file or directory of XML files"
     )
-  <*> switch
-    ( short 'r'
-    <> long "recursive"
-    <> help "Recursively search PATH for XML files"
-    )
   <*> flag ShowElements ShowIgnored
-    ( short 'i'
-    <> long "ignored"
+    ( long "show-ignored"
     <> help "Show ignored XML events"
     )
   <*> option auto
     ( short 'c'
-    <> long "instance-count"
+    <> long "child-instances"
     <> value 0
     <> metavar "COUNT"
-    <> help "Number of instances to show"
+    <> help "Number of child instances to show"
     )
 
 printPerLine :: (Show a) => [a] -> IO ()
@@ -59,44 +52,38 @@ showName (XML.Name ln _ (Just p)) = Text.concat [p, ":", ln]
 textShow :: (Show a) => a -> Text
 textShow = Text.pack . show
 
-showAttribute :: XML.Name -> Text
-showAttribute x = Text.concat ["<", showName x, ">"]
+showElementName :: XML.Name -> Text
+showElementName x = Text.concat ["<", showName x, ">"]
 
-showResultKind :: ResultKind -> Text
-showResultKind (XmlInfer.Element n) = showAttribute n
-showResultKind (XmlInfer.Attribute n) = Text.concat [showName n, "=\"…\""]
-showResultKind x = textShow x
-
-showParentName :: Parent -> Text
-showParentName NoParent = "-"
-showParentName (Parent n) = showAttribute n
+showChild :: Child -> Text
+showChild (XmlInfer.Element n) = showElementName n
+showChild (XmlInfer.Attribute n) = Text.concat [showName n, "=\"…\""]
+showChild x = textShow x
 
 showLocation :: Location -> Text
 showLocation (Location src p) = Text.concat [Text.pack src, ":", textShow p]
 
-printChild :: InstanceCount -> (ResultKind, [Location]) -> IO ()
-printChild c (k, ps) = do
-  Text.putStrLn . Text.concat $ ["  ", showResultKind k, " — ", textShow . length $ ps]
-  mapM_ (Text.putStrLn . Text.append "    " . showLocation) (take (getInstanceCount c) ps)
+printElementInfo :: (XML.Name, ElementInfo) -> IO ()
+printElementInfo (n, i) = do
+  Text.putStrLn $ showElementName n
+  Text.putStrLn $ Text.concat ["  locations: ", textShow . length . locations $ i]
+  Text.putStrLn $ Text.concat ["  ancestors: ", textShow . Map.keys . ancestors $ i]
+  Text.putStrLn $ Text.concat ["  child instances: ", textShow . Map.keys . childInstances $ i]
+  Text.putStrLn $ Text.concat ["  child sets: ", textShow . Map.keys . childSets $ i]
 
-printParent :: InstanceCount -> (Parent, ElementInfo) -> IO ()
-printParent c (pn, ei) = do
-  Text.putStrLn $ Text.concat [showParentName pn, " ", textShow . XmlInfer.count $ ei]
-  mapM_ (printChild c) (Map.assocs . XmlInfer.instances $ ei)
-
-analyzeTree :: InstanceCount -> Element -> IO ()
-analyzeTree c e = do
+analyzeTree :: Settings -> Element -> IO ()
+analyzeTree _ e = do
   let m = infer e
-  mapM_ (printParent c) (Map.assocs m)
+  mapM_ printElementInfo (Map.assocs m)
 
 readXml :: Settings -> IO ()
-readXml (Settings path _ i c) = do
+readXml s@(Settings path i _) = do
   (ignored, events) <- readEvents path
   case i of
     ShowIgnored -> printPerLine ignored
     ShowElements -> case parseElementEvents path events of
       Left e -> printPerLine e
-      Right x -> analyzeTree c x
+      Right x -> analyzeTree s x
 
 main :: IO ()
 main = execParser opts >>= readXml

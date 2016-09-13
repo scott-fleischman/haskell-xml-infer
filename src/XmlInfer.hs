@@ -1,74 +1,86 @@
 module XmlInfer where
 
 import qualified Data.Char as Char
+import qualified Data.Either as Either
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.XML.Types as XML
 import qualified XmlTree as Tree
 import XmlEvents (Location)
 
-data ResultKind
+data Child
   = Whitespace
   | Content
   | Element XML.Name
   | Attribute XML.Name
   deriving (Eq, Ord, Show)
 
-data ElementInfo = ElementInfo
-  { count :: Int
-  , instances :: Map ResultKind [Location]
-  }
-
-data Parent
-  = NoParent
-  | Parent XML.Name
+data Ancestors = Ancestors { getAncestors :: [XML.Name] }
   deriving (Eq, Ord, Show)
 
-type TreeInfo = Map Parent ElementInfo
+addAncestor :: XML.Name -> Ancestors -> Ancestors
+addAncestor n (Ancestors ns) = Ancestors (n : ns)
 
-addResult
-  :: Parent
-  -> ResultKind
-  -> Location
-  -> TreeInfo
-  -> TreeInfo
-addResult pn k p m = case Map.lookup pn m of
-  Just (ElementInfo c mk) -> Map.insert pn kindMap m where
-    kindMap = case Map.lookup k mk of
-      Just ps -> ElementInfo c (Map.insert k (p : ps) mk)
-      Nothing -> ElementInfo c (Map.insert k [p] mk)
-  Nothing -> Map.insert pn (ElementInfo 0 (Map.insert k [p] Map.empty)) m
+data ElementInfo = ElementInfo
+  { locations :: [Location]
+  , ancestors :: Map Ancestors [Location]
+  , childInstances :: Map Child [Location]
+  , childSets :: Map (Set Child) [Location]
+  }
+  deriving (Show)
 
-addChildResult
-  :: Parent
-  -> Either Tree.Element Tree.Content
-  -> TreeInfo
-  -> TreeInfo
-addChildResult n (Left e) m = addElement n e m
-addChildResult n (Right (Tree.Content t p)) m | Text.all Char.isSpace t = addResult n Whitespace p m
-addChildResult n (Right (Tree.Content _ p)) m = addResult n Content p m
+emptyAncestors :: Ancestors
+emptyAncestors = Ancestors []
 
-incrementElementCount
-  :: Parent
-  -> TreeInfo
-  -> TreeInfo
-incrementElementCount pn m = case Map.lookup pn m of
-  Just (ElementInfo c mk) -> Map.insert pn (ElementInfo (c + 1) mk) m
-  Nothing -> Map.insert pn (ElementInfo 1 Map.empty) m
+emptyElementInfo :: ElementInfo
+emptyElementInfo = ElementInfo [] Map.empty Map.empty Map.empty
 
-addElement
-  :: Parent
-  -> Tree.Element
-  -> TreeInfo
-  -> TreeInfo
-addElement pn (Tree.Element n as p _ cs) m = addedAttributes
+contentChild :: Tree.Content -> (Child, Location)
+contentChild (Tree.Content t l) | Text.all Char.isSpace t = (Whitespace, l)
+contentChild (Tree.Content _ l) = (Content, l)
+
+bodyChild :: Either Tree.Element Tree.Content -> (Child, Location)
+bodyChild (Left (Tree.Element n _ l _ _)) = (Element n, l)
+bodyChild (Right c) = contentChild c
+
+immediateChildren :: Tree.Element -> [(Child, Location)]
+immediateChildren (Tree.Element _ as l _ cs) = attributeChildren ++ bodyChildren
   where
-    selfParent = Parent n
-    addedSelfCount = incrementElementCount selfParent m
-    addedAsChild = addResult pn (Element n) p addedSelfCount
-    addedChildren = foldr (addChildResult selfParent) addedAsChild cs
-    addedAttributes = foldr (\an -> addResult selfParent (Attribute an) p) addedChildren (fst <$> as)
+    attributeChildren = fmap (\x -> (Attribute x, l)) . fmap fst $ as
+    bodyChildren = fmap bodyChild cs
 
-infer :: Tree.Element -> TreeInfo
-infer e = addElement NoParent e Map.empty
+elementChildSet :: Tree.Element -> Set Child
+elementChildSet = Set.fromList . fmap fst . immediateChildren
+
+updateOrAddValue :: (Ord k) => (v -> w -> w) -> (v -> w) -> k -> v -> Map k w -> Map k w
+updateOrAddValue f g k v m = case Map.lookup k m of
+  Just vs -> Map.insert k (f v vs) m
+  Nothing -> Map.insert k (g v) m
+
+mapConsValue :: (Ord k) => k -> v -> Map k [v] -> Map k [v]
+mapConsValue = updateOrAddValue (:) pure
+
+addSelfInfo :: Ancestors -> Tree.Element -> ElementInfo -> ElementInfo
+addSelfInfo anc e@(Tree.Element _ _ l _ _) (ElementInfo ls ancMap chInstMap chSetMap) =
+  ElementInfo
+  { locations = (l : ls)
+  , ancestors = mapConsValue anc l ancMap
+  , childInstances = foldr (\(ch, loc) m -> mapConsValue ch loc m) chInstMap (immediateChildren e)
+  , childSets = mapConsValue (elementChildSet e) l chSetMap
+  }
+
+mapAddSelfInfo :: Ancestors -> XML.Name -> Tree.Element -> Map XML.Name ElementInfo -> Map XML.Name ElementInfo
+mapAddSelfInfo a = updateOrAddValue (addSelfInfo a) (\x -> addSelfInfo a x emptyElementInfo)
+
+addElementInfo :: Ancestors -> Tree.Element -> Map XML.Name ElementInfo -> Map XML.Name ElementInfo
+addElementInfo a e@(Tree.Element n _ _ _ cs) = addChildrenInfo . mapAddSelfInfo a n e
+  where
+    a' = addAncestor n a
+    cs' = Either.lefts cs
+    addChildrenInfo x = foldr (addElementInfo a') x cs'
+
+infer :: Tree.Element -> Map XML.Name ElementInfo
+infer e = addElementInfo emptyAncestors e Map.empty
