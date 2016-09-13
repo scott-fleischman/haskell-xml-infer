@@ -17,14 +17,14 @@ import XmlInfer
 import XmlParse
 import XmlTree
 
-newtype InstanceCount = InstanceCount { getInstanceCount :: Int } deriving Num
-instance Read InstanceCount where readsPrec i s = (\(a, b) -> (InstanceCount a, b)) <$> readsPrec i s
-
 data ShowIgnored = ShowIgnored | ShowElements
 data Settings = Settings
   { file :: FilePath
   , showIgnored :: ShowIgnored
-  , instanceCount :: InstanceCount
+  , locationCount :: Int
+  , ancestorCount :: Int
+  , childInstanceCount :: Int
+  , childSetCount :: Int
   }
 
 settings :: Parser Settings
@@ -38,11 +38,32 @@ settings = Settings
     <> help "Show ignored XML events"
     )
   <*> option auto
-    ( short 'c'
-    <> long "child-instances"
+    ( long "locations"
+    <> short 'l'
+    <> value 0
+    <> metavar "COUNT"
+    <> help "Number of locations to show"
+    )
+  <*> option auto
+    ( long "ancestors"
+    <> short 'a'
+    <> value 0
+    <> metavar "COUNT"
+    <> help "Number of ancestors to show"
+    )
+  <*> option auto
+    ( long "child-instances"
+    <> short 'i'
     <> value 0
     <> metavar "COUNT"
     <> help "Number of child instances to show"
+    )
+  <*> option auto
+    ( long "child-sets"
+    <> short 's'
+    <> value 0
+    <> metavar "COUNT"
+    <> help "Number of child sets to show"
     )
 
 printPerLine :: (Show a) => [a] -> IO ()
@@ -108,11 +129,11 @@ analyzeTree _ e = do
   mapM_ printElementInfo (Map.assocs m)
 
 readXml :: Settings -> IO ()
-readXml s@(Settings path i _) = do
-  (ignored, events) <- readEvents path
-  case i of
+readXml s = do
+  (ignored, events) <- readEvents (file s)
+  case showIgnored s of
     ShowIgnored -> printPerLine ignored
-    ShowElements -> case parseElementEvents path events of
+    ShowElements -> case parseElementEvents (file s) events of
       Left e -> printPerLine e
       Right x -> analyzeTree s x
 
