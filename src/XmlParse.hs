@@ -73,8 +73,8 @@ elementParser = do
   endPos <- tryHandle (parseEnd name)
   return $ Tree.Element name attr beginPos endPos children
 
-parseElementEvents :: String -> [Event] -> Either [String] Tree.Element
-parseElementEvents source events = do
-  case runParser elementParser source events of
+parseElementEvents :: [Event] -> Either [String] Tree.Element
+parseElementEvents events = do
+  case runParser elementParser "" events of
     Left e -> Left (messageString <$> errorMessages e)
     Right x -> Right x

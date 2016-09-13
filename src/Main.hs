@@ -13,15 +13,17 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
 import qualified Data.XML.Types as XML
 import Options.Applicative
+import qualified System.FilePath.Find as Find
 import XmlEvents
 import XmlInfer
 import XmlParse
-import XmlTree
+--import XmlTree
 
 data ShowIgnored = ShowIgnored | ShowElements
 data SortSetting = SortByElementName | SortByAncestor
 data Settings = Settings
   { file :: FilePath
+  , glob :: String
   , showIgnored :: ShowIgnored
   , sortSetting :: SortSetting
   , locationCount :: Int
@@ -37,6 +39,13 @@ settings = Settings
   <$> strArgument
     ( metavar "PATH"
     <> help "Path to an XML file or directory of XML files"
+    )
+  <*> strOption
+    ( long "glob"
+    <> short 'g'
+    <> value ""
+    <> metavar "GLOB"
+    <> help "Glob pattern to match files"
     )
   <*> flag ShowElements ShowIgnored
     ( long "show-ignored"
@@ -139,9 +148,8 @@ printElementInfo s (n, i) = do
   printMapInfo (childInstanceCount s) "child instances" showChild (childInstances i)
   printMapInfo (childSetCount s) "child sets" showChildSet (childSets i)
 
-analyzeTree :: Settings -> Element -> IO ()
-analyzeTree s e = do
-  let m = infer e
+printAnalysis :: Settings -> Map XML.Name ElementInfo -> IO ()
+printAnalysis s m = do
   let
     getSortKey (n, i) = case sortSetting s of
       SortByAncestor -> (length . Map.keys . ancestors $ i, Map.keys . ancestors $ i, n)
@@ -149,14 +157,32 @@ analyzeTree s e = do
   let orderedPairs = List.sortOn getSortKey (Map.assocs m)
   mapM_ (printElementInfo s) orderedPairs
 
+splitEithers :: [Either [a] b] -> Either [a] [b]
+splitEithers = foldr go (Right [])
+  where
+    go (Left xs) (Right _) = Left xs
+    go (Left xs) (Left xs') = Left (xs ++ xs')
+    go (Right _) (Left xs) = Left xs
+    go (Right y) (Right ys) = Right (y : ys)
+
+parseAnalyze :: Settings -> [[Event]] -> IO ()
+parseAnalyze s ess = do
+  let ps = splitEithers . fmap parseElementEvents $ ess
+  case ps of
+    Left es -> printPerLine es
+    Right xs -> printAnalysis s . foldr mergeElementMap Map.empty . fmap infer $ xs
+
 readXml :: Settings -> IO ()
 readXml s = do
-  (ignored, events) <- readEvents (file s)
+  let
+    match = case glob s of
+      [] -> Find.always
+      (_ : _) -> Find.fileName Find.~~? glob s
+  names <- Find.find Find.always match (file s)
+  allEventPairs <- mapM readEvents names
   case showIgnored s of
-    ShowIgnored -> printPerLine ignored
-    ShowElements -> case parseElementEvents (file s) events of
-      Left e -> printPerLine e
-      Right x -> analyzeTree s x
+    ShowIgnored -> printPerLine . List.concat . fmap fst $ allEventPairs
+    ShowElements -> parseAnalyze s . fmap snd $ allEventPairs
 
 main :: IO ()
 main = execParser opts >>= readXml
