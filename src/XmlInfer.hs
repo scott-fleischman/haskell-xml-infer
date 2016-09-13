@@ -19,7 +19,10 @@ data Child
   deriving (Eq, Ord, Show)
 
 data Ancestors = Ancestors { getAncestors :: [XML.Name] }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Show)
+instance Ord Ancestors
+  where
+    compare (Ancestors xs) (Ancestors ys) = compare (reverse xs) (reverse ys)
 
 addAncestor :: XML.Name -> Ancestors -> Ancestors
 addAncestor n (Ancestors ns) = Ancestors (n : ns)

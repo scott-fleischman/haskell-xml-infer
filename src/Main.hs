@@ -19,9 +19,11 @@ import XmlParse
 import XmlTree
 
 data ShowIgnored = ShowIgnored | ShowElements
+data SortSetting = SortByElementName | SortByAncestor
 data Settings = Settings
   { file :: FilePath
   , showIgnored :: ShowIgnored
+  , sortSetting :: SortSetting
   , locationCount :: Int
   , ancestorCount :: Int
   , childInstanceCount :: Int
@@ -39,6 +41,10 @@ settings = Settings
   <*> flag ShowElements ShowIgnored
     ( long "show-ignored"
     <> help "Show ignored XML events"
+    )
+  <*> flag SortByElementName SortByAncestor
+    ( long "sort-by-ancestor"
+    <> help "Sort by ancestor"
     )
   <*> option auto
     ( long "locations"
@@ -136,7 +142,12 @@ printElementInfo s (n, i) = do
 analyzeTree :: Settings -> Element -> IO ()
 analyzeTree s e = do
   let m = infer e
-  mapM_ (printElementInfo s) (Map.assocs m)
+  let
+    getSortKey (n, i) = case sortSetting s of
+      SortByAncestor -> (length . Map.keys . ancestors $ i, Map.keys . ancestors $ i, n)
+      SortByElementName -> (0, [], n)
+  let orderedPairs = List.sortOn getSortKey (Map.assocs m)
+  mapM_ (printElementInfo s) orderedPairs
 
 readXml :: Settings -> IO ()
 readXml s = do
