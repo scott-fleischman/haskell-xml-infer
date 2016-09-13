@@ -4,12 +4,13 @@
 module Main where
 
 import qualified Data.List as List
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text
-import qualified Data.Map.Strict as Map
 import qualified Data.XML.Types as XML
 import Options.Applicative
 import XmlEvents
@@ -26,6 +27,8 @@ data Settings = Settings
   , childInstanceCount :: Int
   , childSetCount :: Int
   }
+
+newtype Indent = Indent { getIndent :: Int }
 
 settings :: Parser Settings
 settings = Settings
@@ -69,6 +72,18 @@ settings = Settings
 printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
 
+noIndent :: Indent
+noIndent = Indent 0
+
+increaseIndent :: Indent -> Indent
+increaseIndent (Indent i) = Indent (i + 1)
+
+singleIndent :: Indent
+singleIndent = increaseIndent noIndent
+
+showIndent :: Indent -> Text
+showIndent (Indent i) = Text.replicate i "  "
+
 showName :: XML.Name -> Text
 showName (XML.Name ln _ Nothing) = ln
 showName (XML.Name ln _ (Just p)) = Text.concat [p, ":", ln]
@@ -109,23 +124,30 @@ printChildSet :: Set Child -> [Location] -> IO ()
 printChildSet s ls = do
   Text.putStrLn $ Text.concat ["    ", showChildSet s, ": ", textShow . length $ ls]
 
-printLocationsInfo :: Int -> Text -> Text -> [Location] -> IO ()
+printWithIndent :: Indent -> Text -> IO ()
+printWithIndent i t = Text.putStrLn $ Text.concat [showIndent i, t]
+
+printLocationsInfo :: Int -> Indent -> Text -> [Location] -> IO ()
 printLocationsInfo ct indent label ls = do
-  Text.putStrLn $ Text.concat [indent, label, ": ", textShow . length $ ls]
-  mapM_ (\l -> Text.putStrLn $ Text.concat [indent, "  ", showLocation l]) (take ct ls)
+  printWithIndent indent $ Text.concat [label, ": ", textShow . length $ ls]
+  mapM_ (printWithIndent (increaseIndent indent) . showLocation) (take ct ls)
+
+printMapInfo :: (Ord k) => Int -> Text -> (k -> Text) -> Map k [Location] -> IO ()
+printMapInfo ct label showKey m = do
+  printWithIndent singleIndent $ Text.concat [label, ":"]
+  mapM_ (\(k, ls) -> printLocationsInfo ct (increaseIndent singleIndent) (showKey k) ls) (Map.assocs m)
 
 printElementInfo :: Settings -> (XML.Name, ElementInfo) -> IO ()
 printElementInfo s (n, i) = do
   Text.putStrLn $ showElementName n
-  printLocationsInfo (locationCount s) "  " "locations" (locations i)
+  printLocationsInfo (locationCount s) singleIndent "locations" (locations i)
 
-  Text.putStrLn "  ancestors:"
-  mapM_ (uncurry printAncestors) (Map.assocs . ancestors $ i)
+  printMapInfo (ancestorCount s) "ancestors" showAncestors (ancestors i)
 
-  Text.putStrLn "  child instances:"
+  printWithIndent singleIndent "child instances:"
   mapM_ (uncurry printChildInstance) (Map.assocs . childInstances $ i)
 
-  Text.putStrLn "  child sets:"
+  printWithIndent singleIndent "child sets:"
   mapM_ (uncurry printChildSet) (Map.assocs . childSets $ i)
 
 analyzeTree :: Settings -> Element -> IO ()
