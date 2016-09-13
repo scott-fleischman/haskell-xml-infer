@@ -84,3 +84,18 @@ addElementInfo a e@(Tree.Element n _ _ _ cs) = addChildrenInfo . mapAddSelfInfo 
 
 infer :: Tree.Element -> Map XML.Name ElementInfo
 infer e = addElementInfo emptyAncestors e Map.empty
+
+mergeMap :: (Ord k) => (v -> v -> v) -> Map k v -> Map k v -> Map k v
+mergeMap f m1 m2 = foldr (\(k, v) -> updateOrAddValue f id k v) m2 (Map.assocs m1)
+
+mergeElementInfo :: ElementInfo -> ElementInfo -> ElementInfo
+mergeElementInfo e1 e2 =
+  ElementInfo
+  { locations = locations e1 ++ locations e2
+  , ancestors = mergeMap (++) (ancestors e1) (ancestors e2)
+  , childInstances = mergeMap (++) (childInstances e1) (childInstances e2)
+  , childSets = mergeMap (++) (childSets e1) (childSets e2)
+  }
+
+mergeElementMap :: Map XML.Name ElementInfo -> Map XML.Name ElementInfo -> Map XML.Name ElementInfo
+mergeElementMap = mergeMap mergeElementInfo
