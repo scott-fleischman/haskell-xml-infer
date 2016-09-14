@@ -178,6 +178,7 @@ readXml s = do
       [] -> Find.always
       (_ : _) -> Find.fileName Find.~~? glob s
   names <- Find.find Find.always match (file s)
+  Text.putStrLn $ Text.concat ["Loading ", textShow . length $ names, " files…"]
   allEventPairs <- mapM readEvents names
   case showIgnored s of
     ShowIgnored -> printPerLine . List.filter isShowable . List.concat . fmap fst $ allEventPairs
