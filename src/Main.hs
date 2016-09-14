@@ -17,7 +17,6 @@ import qualified System.FilePath.Find as Find
 import XmlEvents
 import XmlInfer
 import XmlParse
---import XmlTree
 
 data ShowIgnored = ShowIgnored | ShowElements
 data SortSetting = SortByElementName | SortByAncestor
@@ -181,7 +180,7 @@ readXml s = do
   names <- Find.find Find.always match (file s)
   allEventPairs <- mapM readEvents names
   case showIgnored s of
-    ShowIgnored -> printPerLine . List.concat . fmap fst $ allEventPairs
+    ShowIgnored -> printPerLine . List.filter isShowable . List.concat . fmap fst $ allEventPairs
     ShowElements -> parseAnalyze s . fmap snd $ allEventPairs
 
 main :: IO ()
