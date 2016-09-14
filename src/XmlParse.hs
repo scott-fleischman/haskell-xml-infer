@@ -3,6 +3,7 @@
 module XmlParse where
 
 import Data.Conduit.Attoparsec
+import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.XML.Types as XML
 import Text.Megaparsec
@@ -38,10 +39,14 @@ parseEnd :: XML.Name -> Event -> Either [Message] Location
 parseEnd n1 (EventEndElement n2 p) | n1 == n2 = Right p
 parseEnd n e = singleUnexpected $ "Expected end element " ++ show n ++ " but found " ++ show e
 
-eventToContent :: Event -> Either [Message] Tree.Content
-eventToContent (EventContent (XML.ContentText t) p) = Right (Tree.Content t p)
-eventToContent (EventCDATA t p) = Right (Tree.Content t p)
-eventToContent e = singleUnexpected . show $ e
+eventToTextContent :: Event -> Either [Message] Tree.Content
+eventToTextContent (EventContent (XML.ContentText t) p) = Right (Tree.Content (Tree.ContentText t) p)
+eventToTextContent (EventCDATA t p) = Right (Tree.Content (Tree.ContentText t) p)
+eventToTextContent e = singleUnexpected . show $ e
+
+eventToEntityContent :: Event -> Either [Message] Tree.Content
+eventToEntityContent (EventContent (XML.ContentEntity t) p) = Right (Tree.Content (Tree.ContentEntity t) p)
+eventToEntityContent e = singleUnexpected . show $ e
 
 mergePositionRange :: PositionRange -> PositionRange -> PositionRange
 mergePositionRange (PositionRange p1 p2) (PositionRange p3 p4) = PositionRange (minimum positions) (maximum positions) where positions = [p1, p2, p3, p4]
@@ -49,22 +54,27 @@ mergePositionRange (PositionRange p1 p2) (PositionRange p3 p4) = PositionRange (
 mergeLocation :: Location -> Location -> Location
 mergeLocation (Location src1 p1) (Location _ p2) = Location src1 (mergePositionRange p1 p2)
 
+getTextContentOrEmpty :: Tree.Content -> Text
+getTextContentOrEmpty (Tree.Content (Tree.ContentText t) _) = t
+getTextContentOrEmpty _ = Text.empty
+
 concatContent :: MonadParsec s m Event => m Tree.Content
 concatContent = do
-  contents <- some (tryHandle eventToContent)
+  contents <- some (tryHandle eventToTextContent)
   case contents of
     [] -> fail "Empty content list"
     (x : xs) ->
-      let text = Text.concat $ Tree.text <$> contents
+      let text = Text.concat . fmap getTextContentOrEmpty $ contents
       in
         if Text.null text
         then fail "Empty content"
-        else return $ Tree.Content text (foldr mergeLocation (Tree.location x) (Tree.location <$> xs))
+        else return $ Tree.Content (Tree.ContentText text) (foldr mergeLocation (Tree.location x) (Tree.location <$> xs))
 
 elementOrContentParser :: MonadParsec s m Event => m (Either Tree.Element Tree.Content)
 elementOrContentParser
   = (Left <$> elementParser)
   <|> (Right <$> concatContent)
+  <|> (Right <$> (tryHandle eventToEntityContent))
 
 elementParser :: MonadParsec s m Event => m Tree.Element
 elementParser = do

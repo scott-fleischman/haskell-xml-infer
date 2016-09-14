@@ -4,8 +4,13 @@ import Data.Text (Text)
 import qualified Data.XML.Types as XML
 import XmlEvents (Location)
 
+data ContentItem
+  = ContentText Text
+  | ContentEntity Text
+  deriving (Show)
+
 data Content = Content
-  { text :: Text
+  { item :: ContentItem
   , location :: Location
   }
   deriving (Show)

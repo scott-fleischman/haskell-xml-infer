@@ -42,7 +42,7 @@ emptyElementInfo :: ElementInfo
 emptyElementInfo = ElementInfo [] Map.empty Map.empty Map.empty
 
 contentChild :: Tree.Content -> (Child, Location)
-contentChild (Tree.Content t l) | Text.all Char.isSpace t = (Whitespace, l)
+contentChild (Tree.Content (Tree.ContentText t) l) | Text.all Char.isSpace t = (Whitespace, l)
 contentChild (Tree.Content _ l) = (Content, l)
 
 bodyChild :: Either Tree.Element Tree.Content -> (Child, Location)
