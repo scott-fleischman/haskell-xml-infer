@@ -2,6 +2,7 @@
 
 module XmlParse where
 
+import qualified Data.Char as Char
 import Data.Conduit.Attoparsec
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -83,8 +84,19 @@ elementParser = do
   endPos <- tryHandle (parseEnd name)
   return $ Tree.Element name attr beginPos endPos children
 
+whitespaceContent :: MonadParsec s m Event => m ()
+whitespaceContent = tryHandle whitespaceEvent
+  where
+    whitespaceEvent (EventContent (XML.ContentText t) _) | Text.all Char.isSpace t = Right ()
+    whitespaceEvent e = singleUnexpected . show $ e
+
+rootParser :: MonadParsec s m Event => m Tree.Element
+rootParser = do
+  _ <- many whitespaceContent
+  elementParser
+
 parseElementEvents :: [Event] -> Either [String] Tree.Element
 parseElementEvents events = do
-  case runParser elementParser "" events of
+  case runParser rootParser "" events of
     Left e -> Left (messageString <$> errorMessages e)
     Right x -> Right x
