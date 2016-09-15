@@ -3,7 +3,9 @@
 
 module Main where
 
+import Control.Monad
 import qualified Data.List as List
+import Data.Monoid
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Set (Set)
@@ -156,33 +158,53 @@ printAnalysis s m = do
   let orderedPairs = List.sortOn getSortKey (Map.assocs m)
   mapM_ (printElementInfo s) orderedPairs
 
-splitEithers :: [Either [a] b] -> Either [a] [b]
-splitEithers = foldr go (Right [])
-  where
-    go (Left xs) (Right _) = Left xs
-    go (Left xs) (Left xs') = Left (xs ++ xs')
-    go (Right _) (Left xs) = Left xs
-    go (Right y) (Right ys) = Right (y : ys)
+data Result = Result
+  { resultIgnored :: Map FilePath [Ignored]
+  , resultErrors :: Map FilePath [String]
+  , resultInference :: Map XML.Name ElementInfo
+  }
 
-parseAnalyze :: Settings -> [[Event]] -> IO ()
-parseAnalyze s ess = do
-  let ps = splitEithers . fmap parseElementEvents $ ess
-  case ps of
-    Left es -> printPerLine es
-    Right xs -> printAnalysis s . foldr mergeElementMap Map.empty . fmap infer $ xs
+instance Monoid Result where
+  mempty = Result mempty mempty mempty
+  mappend (Result x1 y1 z1) (Result x2 y2 z2) = Result (mappend x1 x2) (mappend y1 y2) (mergeElementMap z1 z2)
 
-readXml :: Settings -> IO ()
-readXml s = do
+getResult :: FilePath -> IO Result
+getResult p = do
+  (ignored, events) <- readEvents p
+  let smap = Map.singleton p
+  let
+    (errors, inference) = case parseElementEvents events of
+      Left es -> (smap es, mempty)
+      Right x -> (mempty, infer x)
+  return $ Result (smap ignored) errors inference
+
+getNames :: Settings -> IO [FilePath]
+getNames s = do
   let
     match = case glob s of
       [] -> Find.always
       (_ : _) -> Find.fileName Find.~~? glob s
   names <- Find.find Find.always match (file s)
+  return names
+
+readXml :: Settings -> IO ()
+readXml s = do
+  names <- getNames s
   Text.putStrLn $ Text.concat ["Loading ", textShow . length $ names, " files…"]
-  allEventPairs <- mapM readEvents names
+
+  (Result ignored errors inference) <- foldM (\r x -> mappend r <$> getResult x) mempty names
+
+  let allIgnored = List.filter isShowable . mconcat . Map.elems $ ignored
+  Text.putStrLn $ Text.concat ["Ignored ", textShow . length $ allIgnored, " events in ", textShow . length . Map.keys $ ignored ," files"]
+
+  let errorFilePaths = Map.keys errors
+  when (not . null $ errorFilePaths) $ do
+    Text.putStrLn $ Text.concat ["Errors in ", textShow . length $ errorFilePaths, " files"]
+    mapM_ (printWithIndent singleIndent . Text.pack) errorFilePaths
+
   case showIgnored s of
-    ShowIgnored -> printPerLine . List.filter isShowable . List.concat . fmap fst $ allEventPairs
-    ShowElements -> parseAnalyze s . fmap snd $ allEventPairs
+    ShowIgnored -> printPerLine allIgnored
+    ShowElements -> printAnalysis s inference
 
 main :: IO ()
 main = execParser opts >>= readXml
