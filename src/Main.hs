@@ -16,21 +16,25 @@ import qualified Data.Text.IO as Text
 import qualified Data.XML.Types as XML
 import Options.Applicative
 import qualified System.FilePath.Find as Find
+import qualified System.Directory as Dir
 import XmlEvents
 import XmlInfer
 import XmlParse
 
 data ShowIgnored = ShowIgnored | ShowElements
 data SortSetting = SortByElementName | SortByAncestor
+data Verbose = Verbose | NotVerbose
 data Settings = Settings
-  { file :: FilePath
-  , glob :: String
-  , showIgnored :: ShowIgnored
-  , sortSetting :: SortSetting
-  , locationCount :: Int
-  , ancestorCount :: Int
-  , childInstanceCount :: Int
-  , childSetCount :: Int
+  { getFilePath :: FilePath
+  , getInclude :: String
+  , getExclude :: String
+  , getVerbose :: Verbose
+  , getShowIgnored :: ShowIgnored
+  , getSortSetting :: SortSetting
+  , getLocationCount :: Int
+  , getAncestorCount :: Int
+  , getChildInstanceCount :: Int
+  , getChildSetCount :: Int
   }
 
 newtype Indent = Indent { getIndent :: Int }
@@ -42,19 +46,31 @@ settings = Settings
     <> help "Path to an XML file or directory of XML files"
     )
   <*> strOption
-    ( long "glob"
-    <> short 'g'
+    ( long "include"
+    <> short 'i'
     <> value ""
-    <> metavar "GLOB"
-    <> help "Glob pattern to match files"
+    <> metavar "INCLUDE"
+    <> help "Include pattern to match files"
+    )
+  <*> strOption
+    ( long "exclude"
+    <> short 'e'
+    <> value ""
+    <> metavar "EXCLUDE"
+    <> help "Exclude pattern to match files"
+    )
+  <*> flag NotVerbose Verbose
+    ( long "verbose"
+    <> short 'v'
+    <> help "Show verbose output"
     )
   <*> flag ShowElements ShowIgnored
     ( long "show-ignored"
     <> help "Show ignored XML events"
     )
-  <*> flag SortByElementName SortByAncestor
-    ( long "sort-by-ancestor"
-    <> help "Sort by ancestor"
+  <*> flag SortByAncestor SortByElementName
+    ( long "sort-by-element"
+    <> help "Sort by element name"
     )
   <*> option auto
     ( long "locations"
@@ -72,18 +88,22 @@ settings = Settings
     )
   <*> option auto
     ( long "child-instances"
-    <> short 'i'
+    <> short 'c'
     <> value 0
     <> metavar "COUNT"
     <> help "Number of child instances to show"
     )
   <*> option auto
     ( long "child-sets"
-    <> short 's'
+    <> short 'C'
     <> value 0
     <> metavar "COUNT"
     <> help "Number of child sets to show"
     )
+
+isVerbose :: Verbose -> Bool
+isVerbose Verbose = True
+isVerbose NotVerbose = False
 
 printPerLine :: (Show a) => [a] -> IO ()
 printPerLine = mapM_ print
@@ -144,15 +164,15 @@ printMapInfo ct label showKey m = do
 printElementInfo :: Settings -> (XML.Name, ElementInfo) -> IO ()
 printElementInfo s (n, i) = do
   Text.putStrLn $ showElementName n
-  printLocationsInfo (locationCount s) singleIndent "locations" (locations i)
-  printMapInfo (ancestorCount s) "ancestors" showAncestors (ancestors i)
-  printMapInfo (childInstanceCount s) "child instances" showChild (childInstances i)
-  printMapInfo (childSetCount s) "child sets" showChildSet (childSets i)
+  printLocationsInfo (getLocationCount s) singleIndent "locations" (locations i)
+  printMapInfo (getAncestorCount s) "ancestors" showAncestors (ancestors i)
+  printMapInfo (getChildInstanceCount s) "child instances" showChild (childInstances i)
+  printMapInfo (getChildSetCount s) "child sets" showChildSet (childSets i)
 
 printAnalysis :: Settings -> Map XML.Name ElementInfo -> IO ()
 printAnalysis s m = do
   let
-    getSortKey (n, i) = case sortSetting s of
+    getSortKey (n, i) = case getSortSetting s of
       SortByAncestor -> (length . Map.keys . ancestors $ i, Map.keys . ancestors $ i, n)
       SortByElementName -> (0, [], n)
   let orderedPairs = List.sortOn getSortKey (Map.assocs m)
@@ -168,8 +188,9 @@ instance Monoid Result where
   mempty = Result mempty mempty mempty
   mappend (Result x1 y1 z1) (Result x2 y2 z2) = Result (mappend x1 x2) (mappend y1 y2) (mergeElementMap z1 z2)
 
-getResult :: FilePath -> IO Result
-getResult p = do
+getResult :: Settings -> FilePath -> IO Result
+getResult s p = do
+  when (isVerbose . getVerbose $ s) . printWithIndent singleIndent . Text.pack $ p 
   (ignored, events) <- readEvents p
   let smap = Map.singleton p
   let
@@ -178,31 +199,50 @@ getResult p = do
       Right x -> (mempty, infer x)
   return $ Result (smap ignored) errors inference
 
+getGlobNames :: Settings -> IO [FilePath]
+getGlobNames s = do
+  let includeInput = getInclude s
+  let include = if null includeInput then "*.xml" else includeInput
+  let includeMatch = Find.fileName Find.~~? include
+
+  let exclude = getExclude s
+  let excludeMatch = if null exclude then Find.always else Find.fileName Find./~? exclude
+  let match = includeMatch Find.&&? excludeMatch
+
+  names <- Find.find Find.always match (getFilePath s)
+  return names
+
 getNames :: Settings -> IO [FilePath]
 getNames s = do
-  let
-    match = case glob s of
-      [] -> Find.always
-      (_ : _) -> Find.fileName Find.~~? glob s
-  names <- Find.find Find.always match (file s)
-  return names
+  let path = getFilePath s
+  fileExists <- Dir.doesFileExist path
+  dirExists <- Dir.doesDirectoryExist path
+
+  if fileExists then
+    return [path]
+  else if dirExists then
+    getGlobNames s
+  else do
+    Text.putStrLn "Path doesn't exist"
+    return []
 
 readXml :: Settings -> IO ()
 readXml s = do
   names <- getNames s
   Text.putStrLn $ Text.concat ["Loading ", textShow . length $ names, " files…"]
 
-  (Result ignored errors inference) <- fmap mconcat . mapM getResult $ names
+  (Result ignored errors inference) <- fmap mconcat . mapM (getResult s) $ names
 
   let allIgnored = List.filter isShowable . mconcat . Map.elems $ ignored
-  Text.putStrLn $ Text.concat ["Ignored ", textShow . length $ allIgnored, " events in ", textShow . length . Map.keys $ ignored ," files"]
+  when (not . null $ allIgnored) $ do
+    Text.putStrLn $ Text.concat ["Ignored ", textShow . length $ allIgnored, " events in ", textShow . length . Map.keys $ ignored ," files"]
 
   let errorFilePaths = Map.keys errors
   when (not . null $ errorFilePaths) $ do
     Text.putStrLn $ Text.concat ["Errors in ", textShow . length $ errorFilePaths, " files"]
     mapM_ (printWithIndent singleIndent . Text.pack) errorFilePaths
 
-  case showIgnored s of
+  case getShowIgnored s of
     ShowIgnored -> printPerLine allIgnored
     ShowElements -> printAnalysis s inference
 
