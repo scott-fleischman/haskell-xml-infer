@@ -192,7 +192,7 @@ readXml s = do
   names <- getNames s
   Text.putStrLn $ Text.concat ["Loading ", textShow . length $ names, " files…"]
 
-  (Result ignored errors inference) <- foldM (\r x -> mappend r <$> getResult x) mempty names
+  (Result ignored errors inference) <- fmap mconcat . mapM getResult $ names
 
   let allIgnored = List.filter isShowable . mconcat . Map.elems $ ignored
   Text.putStrLn $ Text.concat ["Ignored ", textShow . length $ allIgnored, " events in ", textShow . length . Map.keys $ ignored ," files"]
