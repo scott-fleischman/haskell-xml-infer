@@ -27,19 +27,38 @@ instance Ord Ancestors
 addAncestor :: XML.Name -> Ancestors -> Ancestors
 addAncestor n (Ancestors ns) = Ancestors (n : ns)
 
-data ElementInfo = ElementInfo
-  { locations :: [Location]
-  , ancestors :: Map Ancestors [Location]
-  , childInstances :: Map Child [Location]
-  , childSets :: Map (Set Child) [Location]
+data ElementOpen a = ElementOpen
+  { locations :: a
+  , ancestors :: Map Ancestors a
+  , childInstances :: Map Child a
+  , childSets :: Map (Set Child) a
   }
-  deriving (Show)
+
+type ElementInfo = ElementOpen [Location]
+
+data Summary = Summary
+  { locationCount :: !Int
+  , initialLocations :: !([Location]) 
+  }
+
+type ElementSummary = ElementOpen Summary
+
+data SummaryLimit = SummaryLimit
+  { limitLocations :: Int
+  , limitAncestors :: Int
+  , limitChildInstances :: Int
+  , limitChildSets :: Int
+  }
+
+instance Monoid Summary where
+  mempty = Summary 0 mempty
+  mappend (Summary x1 y1) (Summary x2 y2) = Summary (x1 + x2) (mappend y1 y2)
 
 emptyAncestors :: Ancestors
 emptyAncestors = Ancestors []
 
 emptyElementInfo :: ElementInfo
-emptyElementInfo = ElementInfo [] Map.empty Map.empty Map.empty
+emptyElementInfo = ElementOpen [] Map.empty Map.empty Map.empty
 
 contentChild :: Tree.Content -> (Child, Location)
 contentChild (Tree.Content (Tree.ContentText t) l) | Text.all Char.isSpace t = (Whitespace, l)
@@ -67,8 +86,8 @@ mapConsValue :: (Ord k) => k -> v -> Map k [v] -> Map k [v]
 mapConsValue = updateOrAddValue (:) pure
 
 addSelfInfo :: Ancestors -> Tree.Element -> ElementInfo -> ElementInfo
-addSelfInfo anc e@(Tree.Element _ _ l _ _) (ElementInfo ls ancMap chInstMap chSetMap) =
-  ElementInfo
+addSelfInfo anc e@(Tree.Element _ _ l _ _) (ElementOpen ls ancMap chInstMap chSetMap) =
+  ElementOpen
   { locations = (l : ls)
   , ancestors = mapConsValue anc l ancMap
   , childInstances = foldr (\(ch, loc) m -> mapConsValue ch loc m) chInstMap (immediateChildren e)
@@ -85,20 +104,44 @@ addElementInfo a e@(Tree.Element n _ _ _ cs) = addChildrenInfo . mapAddSelfInfo 
     cs' = Either.lefts cs
     addChildrenInfo x = foldr (addElementInfo a') x cs'
 
-infer :: Tree.Element -> Map XML.Name ElementInfo
-infer e = addElementInfo emptyAncestors e Map.empty
+limitSummaryLocations :: Int -> Summary -> Summary
+limitSummaryLocations n (Summary x y) = Summary x (take n y)
+
+applyLimits :: SummaryLimit -> ElementSummary -> ElementSummary
+applyLimits s e =
+  ElementOpen
+  { locations = limitSummaryLocations (limitLocations s) (locations e) 
+  , ancestors = Map.map (limitSummaryLocations $ limitAncestors s) (ancestors e)
+  , childInstances = Map.map (limitSummaryLocations $ limitChildInstances s) (childInstances e)
+  , childSets = Map.map (limitSummaryLocations $ limitChildSets s) (childSets e)
+  }
+
+summarizeLocations :: [Location] -> Summary
+summarizeLocations locs = Summary (length locs) locs
+
+summarize :: SummaryLimit -> ElementInfo -> ElementSummary
+summarize s e = applyLimits s $
+  ElementOpen
+  { locations = summarizeLocations (locations e) 
+  , ancestors = Map.map summarizeLocations (ancestors e)
+  , childInstances = Map.map summarizeLocations (childInstances e)
+  , childSets = Map.map summarizeLocations (childSets e)
+  }
+
+infer :: SummaryLimit -> Tree.Element -> Map XML.Name ElementSummary
+infer s e = Map.map (summarize s) . addElementInfo emptyAncestors e $ Map.empty
 
 mergeMap :: (Ord k) => (v -> v -> v) -> Map k v -> Map k v -> Map k v
 mergeMap f m1 m2 = foldr (\(k, v) -> updateOrAddValue f id k v) m2 (Map.assocs m1)
 
-mergeElementInfo :: ElementInfo -> ElementInfo -> ElementInfo
-mergeElementInfo e1 e2 =
-  ElementInfo
-  { locations = locations e1 ++ locations e2
-  , ancestors = mergeMap (++) (ancestors e1) (ancestors e2)
-  , childInstances = mergeMap (++) (childInstances e1) (childInstances e2)
-  , childSets = mergeMap (++) (childSets e1) (childSets e2)
+mergeElementInfo :: SummaryLimit -> ElementSummary -> ElementSummary -> ElementSummary
+mergeElementInfo s e1 e2 = applyLimits s $
+  ElementOpen
+  { locations = mappend (locations e1) (locations e2)
+  , ancestors = mergeMap mappend (ancestors e1) (ancestors e2)
+  , childInstances = mergeMap mappend (childInstances e1) (childInstances e2)
+  , childSets = mergeMap mappend (childSets e1) (childSets e2)
   }
 
-mergeElementMap :: Map XML.Name ElementInfo -> Map XML.Name ElementInfo -> Map XML.Name ElementInfo
-mergeElementMap = mergeMap mergeElementInfo
+mergeElementMap :: SummaryLimit -> Map XML.Name ElementSummary -> Map XML.Name ElementSummary -> Map XML.Name ElementSummary
+mergeElementMap s = mergeMap (mergeElementInfo s)

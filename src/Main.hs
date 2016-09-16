@@ -151,42 +151,52 @@ showChildSet s =
 printWithIndent :: Indent -> Text -> IO ()
 printWithIndent i t = Text.putStrLn $ Text.concat [showIndent i, t]
 
-printLocationsInfo :: Int -> Indent -> Text -> [Location] -> IO ()
-printLocationsInfo ct indent label ls = do
-  printWithIndent indent $ Text.concat [label, ": ", textShow . length $ ls]
-  mapM_ (printWithIndent (increaseIndent indent) . showLocation) (take ct ls)
+printSummary :: Indent -> Text -> Summary -> IO ()
+printSummary indent label s = do
+  printWithIndent indent $ Text.concat [label, ": ", textShow . locationCount $ s]
+  mapM_ (printWithIndent (increaseIndent indent) . showLocation) (initialLocations s)
 
-printMapInfo :: (Ord k) => Int -> Text -> (k -> Text) -> Map k [Location] -> IO ()
-printMapInfo ct label showKey m = do
+printMapInfo :: (Ord k) => Text -> (k -> Text) -> Map k Summary -> IO ()
+printMapInfo label showKey m = do
   printWithIndent singleIndent $ Text.concat [label, ":"]
-  mapM_ (\(k, ls) -> printLocationsInfo ct (increaseIndent singleIndent) (showKey k) ls) (Map.assocs m)
+  mapM_ (\(k, ls) -> printSummary (increaseIndent singleIndent) (showKey k) ls) (Map.assocs m)
 
-printElementInfo :: Settings -> (XML.Name, ElementInfo) -> IO ()
-printElementInfo s (n, i) = do
+printElementInfo :: (XML.Name, ElementSummary) -> IO ()
+printElementInfo (n, i) = do
   Text.putStrLn $ showElementName n
-  printLocationsInfo (getLocationCount s) singleIndent "locations" (locations i)
-  printMapInfo (getAncestorCount s) "ancestors" showAncestors (ancestors i)
-  printMapInfo (getChildInstanceCount s) "child instances" showChild (childInstances i)
-  printMapInfo (getChildSetCount s) "child sets" showChildSet (childSets i)
+  printSummary singleIndent "locations" (locations i)
+  printMapInfo "ancestors" showAncestors (ancestors i)
+  printMapInfo "child instances" showChild (childInstances i)
+  printMapInfo "child sets" showChildSet (childSets i)
 
-printAnalysis :: Settings -> Map XML.Name ElementInfo -> IO ()
+printAnalysis :: Settings -> Map XML.Name ElementSummary -> IO ()
 printAnalysis s m = do
   let
     getSortKey (n, i) = case getSortSetting s of
       SortByAncestor -> (length . Map.keys . ancestors $ i, Map.keys . ancestors $ i, n)
       SortByElementName -> (0, [], n)
   let orderedPairs = List.sortOn getSortKey (Map.assocs m)
-  mapM_ (printElementInfo s) orderedPairs
+  mapM_ printElementInfo orderedPairs
 
 data Result = Result
   { resultIgnored :: Map FilePath [Ignored]
   , resultErrors :: Map FilePath [String]
-  , resultInference :: Map XML.Name ElementInfo
+  , resultInference :: Map XML.Name ElementSummary
   }
 
-instance Monoid Result where
-  mempty = Result mempty mempty mempty
-  mappend (Result x1 y1 z1) (Result x2 y2 z2) = Result (mappend x1 x2) (mappend y1 y2) (mergeElementMap z1 z2)
+emptyResult :: Result
+emptyResult = Result mempty mempty mempty
+
+appendResult :: SummaryLimit -> Result -> Result -> Result
+appendResult s (Result x1 y1 z1) (Result x2 y2 z2) = Result (mappend x1 x2) (mappend y1 y2) (mergeElementMap s z1 z2)
+
+getLimits :: Settings -> SummaryLimit
+getLimits s = SummaryLimit
+  { limitLocations = getLocationCount s
+  , limitAncestors = getAncestorCount s
+  , limitChildInstances = getChildInstanceCount s
+  , limitChildSets = getChildSetCount s
+  }
 
 getResult :: Settings -> FilePath -> IO Result
 getResult s p = do
@@ -196,7 +206,7 @@ getResult s p = do
   let
     (errors, inference) = case parseElementEvents events of
       Left es -> (smap es, mempty)
-      Right x -> (mempty, infer x)
+      Right x -> (mempty, infer (getLimits s) x)
   return $ Result (smap ignored) errors inference
 
 getGlobNames :: Settings -> IO [FilePath]
@@ -231,7 +241,7 @@ readXml s = do
   names <- getNames s
   Text.putStrLn $ Text.concat ["Loading ", textShow . length $ names, " files…"]
 
-  (Result ignored errors inference) <- fmap mconcat . mapM (getResult s) $ names
+  (Result ignored errors inference) <- fmap (foldr (appendResult (getLimits s)) emptyResult) . mapM (getResult s) $ names
 
   let allIgnored = List.filter isShowable . mconcat . Map.elems $ ignored
   when (not . null $ allIgnored) $ do
