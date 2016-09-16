@@ -242,6 +242,29 @@ getNames s = do
     Text.putStrLn "Path doesn't exist"
     return []
 
+isSignificantIgnored :: Ignored -> Bool
+isSignificantIgnored (IgnoredBeginDocument _) = False
+isSignificantIgnored (IgnoredEndDocument _) = False
+isSignificantIgnored (IgnoredBeginDoctype _ _ _) = True
+isSignificantIgnored (IgnoredEndDoctype _) = False
+isSignificantIgnored (IgnoredInstruction _ _) = True
+isSignificantIgnored (IgnoredComment _ _) = True
+isSignificantIgnored (IgnoredMissingPosition _ _) = False
+
+printFileSummary :: Text -> (Ignored -> Bool) -> Map FilePath [Ignored] -> IO ()
+printFileSummary label f m = do
+  let ignored = Map.filter (not . null) . fmap (List.filter f) $ m
+  when (not . Map.null $ ignored) $ do
+    let elementCount = textShow . length . List.concat . Map.elems $ ignored
+    let fileCount = textShow . length . Map.keys $ ignored
+    Text.putStrLn $ Text.concat ["Ignored ", elementCount, " ", label, " in ", fileCount, " files"]
+
+printIgnoredSummary :: Map FilePath [Ignored] -> IO ()
+printIgnoredSummary ignored = do
+  printFileSummary "comments" (\x -> case x of { IgnoredComment _ _ -> True; _ -> False }) ignored
+  printFileSummary "doctypes" (\x -> case x of { IgnoredBeginDoctype _ _ _ -> True; _ -> False }) ignored
+  printFileSummary "instructions" (\x -> case x of { IgnoredInstruction _ _ -> True; _ -> False }) ignored
+
 readXml :: Settings -> IO ()
 readXml s = do
   names <- getNames s
@@ -249,9 +272,8 @@ readXml s = do
 
   (Result ignored errors inference) <- fmap (foldr (appendResult (getLimits s)) emptyResult) . mapM (getResult s) $ names
 
-  let allIgnored = List.filter isShowable . mconcat . Map.elems $ ignored
-  when (not . null $ allIgnored) $ do
-    Text.putStrLn $ Text.concat ["Ignored ", textShow . length $ allIgnored, " events in ", textShow . length . Map.keys $ ignored ," files"]
+  let sigIgnored = Map.filter (not . null) . fmap (List.filter isSignificantIgnored) $ ignored
+  when (not . Map.null $ sigIgnored) (printIgnoredSummary sigIgnored)
 
   let errorFilePaths = Map.keys errors
   let hasErrors = not . null $ errorFilePaths 
@@ -260,7 +282,7 @@ readXml s = do
     mapM_ (printWithIndent singleIndent . Text.pack) errorFilePaths
 
   case getShowIgnored s of
-    ShowIgnored -> printPerLine allIgnored
+    ShowIgnored -> printPerLine (Map.elems sigIgnored)
     ShowElements -> do
       case (hasErrors, getShowErrors s) of
         (True, ShowErrors) -> printPerLine $ Map.elems errors

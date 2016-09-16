@@ -36,11 +36,6 @@ data Ignored
   | IgnoredMissingPosition FilePath XML.Event
   deriving (Show)
 
-isShowable :: Ignored -> Bool
-isShowable (IgnoredBeginDocument _) = False
-isShowable (IgnoredEndDocument _) = False
-isShowable _ = True
-
 loc :: FilePath -> PositionRange -> Location
 loc = Location
 
