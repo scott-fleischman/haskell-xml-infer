@@ -22,6 +22,7 @@ import XmlInfer
 import XmlParse
 
 data ShowIgnored = ShowIgnored | ShowElements
+data ShowErrors = ShowErrors | SkipErrors
 data SortSetting = SortByElementName | SortByAncestor
 data Verbose = Verbose | NotVerbose
 data Settings = Settings
@@ -30,6 +31,7 @@ data Settings = Settings
   , getExclude :: String
   , getVerbose :: Verbose
   , getShowIgnored :: ShowIgnored
+  , getShowErrors :: ShowErrors
   , getSortSetting :: SortSetting
   , getLocationCount :: Int
   , getAncestorCount :: Int
@@ -67,6 +69,10 @@ settings = Settings
   <*> flag ShowElements ShowIgnored
     ( long "show-ignored"
     <> help "Show ignored XML events"
+    )
+  <*> flag SkipErrors ShowErrors
+    ( long "show-errors"
+    <> help "Show error details for invalid XML files"
     )
   <*> flag SortByAncestor SortByElementName
     ( long "sort-by-element"
@@ -248,13 +254,17 @@ readXml s = do
     Text.putStrLn $ Text.concat ["Ignored ", textShow . length $ allIgnored, " events in ", textShow . length . Map.keys $ ignored ," files"]
 
   let errorFilePaths = Map.keys errors
-  when (not . null $ errorFilePaths) $ do
+  let hasErrors = not . null $ errorFilePaths 
+  when hasErrors $ do
     Text.putStrLn $ Text.concat ["Errors in ", textShow . length $ errorFilePaths, " files"]
     mapM_ (printWithIndent singleIndent . Text.pack) errorFilePaths
 
   case getShowIgnored s of
     ShowIgnored -> printPerLine allIgnored
-    ShowElements -> printAnalysis s inference
+    ShowElements -> do
+      case (hasErrors, getShowErrors s) of
+        (True, ShowErrors) -> printPerLine $ Map.elems errors
+        _ -> printAnalysis s inference
 
 main :: IO ()
 main = execParser opts >>= readXml
